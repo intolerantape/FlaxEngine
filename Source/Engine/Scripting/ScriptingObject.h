@@ -41,7 +41,7 @@ public:
 public:
 
     /// <summary>
-    /// Spawns a new objects of the given type.
+    /// Spawns a new object of the given type.
     /// </summary>
     template<typename T>
     static T* Spawn()
