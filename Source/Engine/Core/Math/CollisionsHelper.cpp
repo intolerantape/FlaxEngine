@@ -15,7 +15,7 @@ void CollisionsHelper::ClosestPointPointLine(const Vector2& point, const Vector2
     Vector2 n = p1 - p0;
 
     const float length = n.Length();
-    if (length < 1e-10)
+    if (length < 1e-10f)
     {
         // Both points are the same, just give any
         result = p0;
@@ -24,7 +24,7 @@ void CollisionsHelper::ClosestPointPointLine(const Vector2& point, const Vector2
     n /= length;
 
     const float dot = Vector2::Dot(n, p);
-    if (dot <= 0.0)
+    if (dot <= 0.0f)
     {
         // Before first point
         result = p0;
@@ -61,7 +61,7 @@ void CollisionsHelper::ClosestPointPointLine(const Vector3& point, const Vector3
     }
     n /= length;
     const float dot = Vector3::Dot(n, p);
-    if (dot <= 0.0)
+    if (dot <= 0.0f)
     {
         result = p0;
         return;
@@ -903,7 +903,6 @@ bool CollisionsHelper::RayIntersectsBox(const Ray& ray, const BoundingBox& box, 
     d = Math::Abs(size.Z - Math::Abs(localPoint.Z));
     if (d < dMin)
     {
-        dMin = d;
         normal = Vector3(0, 0, Math::Sign(localPoint.Z));
     }
 
@@ -1072,15 +1071,11 @@ PlaneIntersectionType CollisionsHelper::PlaneIntersectsBox(const Plane& plane, c
     min.Z = plane.Normal.Z >= 0.0f ? box.Maximum.Z : box.Minimum.Z;
 
     float distance = Vector3::Dot(plane.Normal, max);
-
     if (distance + plane.D > Plane::DistanceEpsilon)
         return PlaneIntersectionType::Front;
-
     distance = Vector3::Dot(plane.Normal, min);
-
     if (distance + plane.D < Plane::DistanceEpsilon)
         return PlaneIntersectionType::Back;
-
     return PlaneIntersectionType::Intersecting;
 }
 
@@ -1094,10 +1089,8 @@ PlaneIntersectionType CollisionsHelper::PlaneIntersectsSphere(const Plane& plane
 
     if (distance > sphere.Radius)
         return PlaneIntersectionType::Front;
-
     if (distance < -sphere.Radius)
         return PlaneIntersectionType::Back;
-
     return PlaneIntersectionType::Intersecting;
 }
 
@@ -1105,13 +1098,10 @@ bool CollisionsHelper::BoxIntersectsBox(const BoundingBox& box1, const BoundingB
 {
     if (box1.Minimum.X > box2.Maximum.X || box2.Minimum.X > box1.Maximum.X)
         return false;
-
     if (box1.Minimum.Y > box2.Maximum.Y || box2.Minimum.Y > box1.Maximum.Y)
         return false;
-
     if (box1.Minimum.Z > box2.Maximum.Z || box2.Minimum.Z > box1.Maximum.Z)
         return false;
-
     return true;
 }
 
