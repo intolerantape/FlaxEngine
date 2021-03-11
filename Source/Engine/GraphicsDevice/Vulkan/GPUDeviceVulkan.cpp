@@ -1076,7 +1076,7 @@ GPUDeviceVulkan::GPUDeviceVulkan(ShaderProfile shaderProfile, GPUAdapterVulkan* 
 GPUDevice* GPUDeviceVulkan::Create()
 {
 #if !USE_EDITOR && (PLATFORM_WINDOWS || PLATFORM_LINUX)
-	auto settings = PlatformSettings::Instance();
+	auto settings = PlatformSettings::Get();
 	if (!settings->SupportVulkan)
 	{
 		// Skip if there is no support
@@ -1825,7 +1825,9 @@ bool GPUDeviceVulkan::Init()
 #endif
 #undef INIT_FUNC
         VmaAllocatorCreateInfo allocatorInfo = {};
+        allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_0;
         allocatorInfo.physicalDevice = gpu;
+        allocatorInfo.instance = Instance;
         allocatorInfo.device = Device;
         allocatorInfo.pVulkanFunctions = &vulkanFunctions;
         VALIDATE_VULKAN_RESULT(vmaCreateAllocator(&allocatorInfo, &Allocator));
@@ -1886,9 +1888,11 @@ void GPUDeviceVulkan::Dispose()
     SAFE_DELETE_GPU_RESOURCE(UniformBufferUploader);
     Delete(DescriptorPoolsManager);
     SAFE_DELETE(MainContext);
+    if (TransferQueue != GraphicsQueue && ComputeQueue != TransferQueue)
+        SAFE_DELETE(TransferQueue);
+    if (ComputeQueue != GraphicsQueue)
+        SAFE_DELETE(ComputeQueue);
     SAFE_DELETE(GraphicsQueue);
-    SAFE_DELETE(ComputeQueue);
-    SAFE_DELETE(TransferQueue);
     PresentQueue = nullptr;
     FenceManager.Dispose();
     DeferredDeletionQueue.ReleaseResources(true);

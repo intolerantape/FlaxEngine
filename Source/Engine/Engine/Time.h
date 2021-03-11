@@ -15,6 +15,7 @@ API_CLASS(Static) class FLAXENGINE_API Time
 DECLARE_SCRIPTING_TYPE_NO_SPAWN(Time);
     friend class Engine;
     friend class TimeService;
+    friend class PhysicsSettings;
 public:
 
     /// <summary>
@@ -100,6 +101,7 @@ public:
 private:
 
     static bool _gamePaused;
+    static float _physicsMaxDeltaTime;
 
 public:
 
@@ -119,8 +121,11 @@ public:
     API_FIELD() static float PhysicsFPS;
 
     /// <summary>
-    /// The target amount of the frames rendered per second (actual game FPS).
+    /// The target amount of the frames rendered per second (target game FPS).
     /// </summary>
+    /// <remarks>
+    /// To get the actual game FPS use <see cref="Engine.FramesPerSecond"/>
+    /// </remarks>
     API_FIELD() static float DrawFPS;
 
     /// <summary>

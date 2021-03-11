@@ -44,7 +44,6 @@ namespace
     bool DeleteUnixPathTree(const char* path)
     {
         size_t pathLength;
-        DIR* dir;
         struct stat statPath, statEntry;
         struct dirent* entry;
 
@@ -59,7 +58,8 @@ namespace
         }
 
         // If not possible to read the directory for this user
-        if ((dir = opendir(path)) == nullptr)
+        DIR* dir = dir = opendir(path);
+        if (dir == nullptr)
         {
             // Cannot open directory
             return true;
@@ -77,7 +77,7 @@ namespace
 
             // Determinate a full path of an entry
             char full_path[256];
-            ASSERT(pathLength + strlen(entry->d_name) <= 255);
+            ASSERT(pathLength + strlen(entry->d_name) < ARRAY_COUNT(full_path));
             strcpy(full_path, path);
             strcat(full_path, "/");
             strcat(full_path, entry->d_name);
@@ -168,7 +168,6 @@ bool AndroidFileSystem::DirectoryGetFiles(Array<String>& results, const String& 
 bool AndroidFileSystem::GetChildDirectories(Array<String>& results, const String& directory)
 {
     size_t pathLength;
-    DIR* dir;
     struct stat statPath, statEntry;
     struct dirent* entry;
     const StringAsANSI<> pathANSI(*directory, directory.Length());
@@ -185,7 +184,8 @@ bool AndroidFileSystem::GetChildDirectories(Array<String>& results, const String
     }
 
     // If not possible to read the directory for this user
-    if ((dir = opendir(path)) == nullptr)
+    DIR* dir = opendir(path);
+    if (dir == nullptr)
     {
         // Cannot open directory
         return true;
@@ -203,7 +203,7 @@ bool AndroidFileSystem::GetChildDirectories(Array<String>& results, const String
 
         // Determinate a full path of an entry
         char full_path[256];
-        ASSERT(pathLength + strlen(entry->d_name) <= 255);
+        ASSERT(pathLength + strlen(entry->d_name) < ARRAY_COUNT(full_path));
         strcpy(full_path, path);
         strcat(full_path, "/");
         strcat(full_path, entry->d_name);
@@ -317,71 +317,64 @@ bool AndroidFileSystem::CopyFile(const StringView& dst, const StringView& src)
 {
     const StringAsANSI<> srcANSI(*src, src.Length());
     const StringAsANSI<> dstANSI(*dst, dst.Length());
-    const char* from = srcANSI.Get();
-    const char* to = dstANSI.Get();
 
-    int fd_to, fd_from;
-    char buf[4096];
-    ssize_t nread;
-    int saved_errno;
+    int srcFile, dstFile;
+    char buffer[4096];
+    ssize_t readSize;
+    int cachedError;
 
-    fd_from = open(from, O_RDONLY);
-    if (fd_from < 0)
+    srcFile = open(srcANSI.Get(), O_RDONLY);
+    if (srcFile < 0)
         return true;
-
-    fd_to = open(to, O_WRONLY | O_CREAT | O_EXCL, 0666);
-    if (fd_to < 0)
+    dstFile = open(dstANSI.Get(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+    if (dstFile < 0)
         goto out_error;
 
-    while (nread = read(fd_from, buf, sizeof buf), nread > 0)
+    while (readSize = read(srcFile, buffer, sizeof(buffer)), readSize > 0)
     {
-        char* out_ptr = buf;
-        ssize_t nwritten;
+        char* ptr = buffer;
+        ssize_t writeSize;
 
         do
         {
-            nwritten = write(fd_to, out_ptr, nread);
-
-            if (nwritten >= 0)
+            writeSize = write(dstFile, ptr, readSize);
+            if (writeSize >= 0)
             {
-                nread -= nwritten;
-                out_ptr += nwritten;
+                readSize -= writeSize;
+                ptr += writeSize;
             }
             else if (errno != EINTR)
             {
                 goto out_error;
             }
-        } while (nread > 0);
+        } while (readSize > 0);
     }
 
-    if (nread == 0)
+    if (readSize == 0)
     {
-        if (close(fd_to) < 0)
+        if (close(dstFile) < 0)
         {
-            fd_to = -1;
+            dstFile = -1;
             goto out_error;
         }
-        close(fd_from);
+        close(srcFile);
 
         // Success
         return false;
     }
 
 out_error:
-    saved_errno = errno;
-
-    close(fd_from);
-    if (fd_to >= 0)
-        close(fd_to);
-
-    errno = saved_errno;
+    cachedError = errno;
+    close(srcFile);
+    if (dstFile >= 0)
+        close(dstFile);
+    errno = cachedError;
     return true;
 }
 
 bool AndroidFileSystem::getFilesFromDirectoryTop(Array<String>& results, const char* path, const char* searchPattern)
 {
     size_t pathLength;
-    DIR* dir;
     struct stat statPath, statEntry;
     struct dirent* entry;
 
@@ -396,7 +389,8 @@ bool AndroidFileSystem::getFilesFromDirectoryTop(Array<String>& results, const c
     }
 
     // If not possible to read the directory for this user
-    if ((dir = opendir(path)) == nullptr)
+    DIR* dir = opendir(path);
+    if (dir == nullptr)
     {
         // Cannot open directory
         return true;
@@ -432,7 +426,7 @@ bool AndroidFileSystem::getFilesFromDirectoryTop(Array<String>& results, const c
             {
                 // All files
             }
-            else if (searchPattern[0] == '*' && searchPatternLength < fullPathLength && StringUtils::Compare(fullPath + fullPathLength - searchPatternLength, searchPattern + 1) == 0)
+            else if (searchPattern[0] == '*' && searchPatternLength < fullPathLength && StringUtils::Compare(fullPath + fullPathLength - searchPatternLength + 1, searchPattern + 1) == 0)
             {
                 // Path ending
             }
@@ -458,7 +452,6 @@ bool AndroidFileSystem::getFilesFromDirectoryAll(Array<String>& results, const c
     getFilesFromDirectoryTop(results, path, searchPattern);
 
     size_t pathLength;
-    DIR* dir;
     struct stat statPath, statEntry;
     struct dirent* entry;
 
@@ -473,7 +466,8 @@ bool AndroidFileSystem::getFilesFromDirectoryAll(Array<String>& results, const c
     }
 
     // If not possible to read the directory for this user
-    if ((dir = opendir(path)) == nullptr)
+    DIR* dir = opendir(path);
+    if (dir == nullptr)
     {
         // Cannot open directory
         return true;
@@ -491,7 +485,7 @@ bool AndroidFileSystem::getFilesFromDirectoryAll(Array<String>& results, const c
 
         // Determinate a full path of an entry
         char full_path[256];
-        ASSERT(pathLength + strlen(entry->d_name) <= 255);
+        ASSERT(pathLength + strlen(entry->d_name) < ARRAY_COUNT(full_path));
         strcpy(full_path, path);
         strcat(full_path, "/");
         strcat(full_path, entry->d_name);

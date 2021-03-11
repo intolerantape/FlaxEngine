@@ -198,6 +198,8 @@ namespace Flax.Build.Projects.VisualStudioCode
                                             json.AddUnnamedField(string.Format("-configuration={0}", configuration.ConfigurationName));
                                             json.AddUnnamedField(string.Format("-platform={0}", configuration.PlatformName));
                                             json.AddUnnamedField(string.Format("-buildTargets={0}", target.Name));
+                                            if (!string.IsNullOrEmpty(Configuration.Compiler))
+                                                json.AddUnnamedField(string.Format("-compiler={0}", Configuration.Compiler));
                                         }
                                         json.EndArray();
 
@@ -212,7 +214,7 @@ namespace Flax.Build.Projects.VisualStudioCode
                                     }
                                     case TargetPlatform.Linux:
                                     {
-                                        json.AddField("command", "mono");
+                                        json.AddField("command", Path.Combine(Globals.EngineRoot, "Source/Platforms/Editor/Linux/Mono/bin/mono"));
                                         json.BeginArray("args");
                                         {
                                             json.AddUnnamedField(buildToolPath);
@@ -224,6 +226,8 @@ namespace Flax.Build.Projects.VisualStudioCode
                                             json.AddUnnamedField(string.Format("--configuration={0}", configuration.ConfigurationName));
                                             json.AddUnnamedField(string.Format("--platform={0}", configuration.PlatformName));
                                             json.AddUnnamedField(string.Format("--buildTargets={0}", target.Name));
+                                            if (!string.IsNullOrEmpty(Configuration.Compiler))
+                                                json.AddUnnamedField(string.Format("--compiler={0}", Configuration.Compiler));
                                         }
                                         json.EndArray();
 
@@ -287,7 +291,6 @@ namespace Flax.Build.Projects.VisualStudioCode
                                         switch (Platform.BuildPlatform.Target)
                                         {
                                         case TargetPlatform.Windows:
-                                        {
                                             if (configuration.Platform == TargetPlatform.Windows && outputType != TargetOutputType.Executable && configuration.Name.StartsWith("Editor."))
                                             {
                                                 var editorFolder = configuration.Architecture == TargetArchitecture.x64 ? "Win64" : "Win32";
@@ -302,21 +305,70 @@ namespace Flax.Build.Projects.VisualStudioCode
                                                 }
                                                 json.EndArray();
                                             }
+                                            else
+                                            {
+                                                json.AddField("program", outputTargetFilePath);
+                                            }
                                             break;
-                                        }
                                         case TargetPlatform.Linux:
-                                        {
-                                            json.AddField("program", outputTargetFilePath);
+                                            if (configuration.Platform == TargetPlatform.Linux && (outputType != TargetOutputType.Executable || project.Name == "Flax") && configuration.Name.StartsWith("Editor."))
+                                            {
+                                                json.AddField("program", Path.Combine(Globals.EngineRoot, "Binaries", "Editor", "Linux", configuration.ConfigurationName, "FlaxEditor"));
+                                            }
+                                            else
+                                            {
+                                                json.AddField("program", outputTargetFilePath);
+                                            }
+                                            if (configuration.Platform == TargetPlatform.Linux)
+                                            {
+                                                json.AddField("MIMode", "gdb");
+                                                json.BeginArray("setupCommands");
+                                                {
+                                                    json.BeginObject();
+                                                    json.AddField("description", "Enable pretty-printing for gdb");
+                                                    json.AddField("text", "-enable-pretty-printing");
+                                                    json.AddField("ignoreFailures", true);
+                                                    json.EndObject();
+
+                                                    // Ignore signals used by Mono
+                                                    json.BeginObject();
+                                                    json.AddField("description", "ignore SIG35 signal");
+                                                    json.AddField("text", "handle SIG35 nostop noprint pass");
+                                                    json.EndObject();
+                                                    json.BeginObject();
+                                                    json.AddField("description", "ignore SIG36 signal");
+                                                    json.AddField("text", "handle SIG36 nostop noprint pass");
+                                                    json.EndObject();
+                                                    json.BeginObject();
+                                                    json.AddField("description", "ignore SIG357 signal");
+                                                    json.AddField("text", "handle SIG37 nostop noprint pass");
+                                                    json.EndObject();
+                                                }
+                                                json.EndArray();
+                                                json.BeginArray("args");
+                                                {
+                                                    json.AddUnnamedField("--std");
+                                                    if (outputType != TargetOutputType.Executable && configuration.Name.StartsWith("Editor."))
+                                                    {
+                                                        json.AddUnnamedField("--project");
+                                                        json.AddUnnamedField(buildToolWorkspace);
+                                                        json.AddUnnamedField("--skipCompile");
+                                                    }
+                                                }
+                                                json.EndArray();
+                                            }
                                             break;
                                         }
-                                        }
-
-                                        if (configuration.Platform == TargetPlatform.Windows)
+                                        switch (configuration.Platform)
                                         {
+                                        case TargetPlatform.Windows:
                                             json.AddField("stopAtEntry", false);
                                             json.AddField("externalConsole", true);
-                                            json.AddField("visualizerFile", Path.Combine(Globals.EngineRoot, "Source", "flax.natvis"));
+                                            break;
+                                        case TargetPlatform.Linux:
+                                            break;
                                         }
+                                        json.AddField("visualizerFile", Path.Combine(Globals.EngineRoot, "Source", "flax.natvis"));
                                     }
                                     json.EndObject();
                                 }
@@ -428,11 +480,13 @@ namespace Flax.Build.Projects.VisualStudioCode
 
                 // File and folders excludes
                 json.BeginObject("files.exclude");
+                json.AddField("**/.git", true);
+                json.AddField("**/.svn", true);
+                json.AddField("**/.hg", true);
                 json.AddField("**/.vs", true);
                 json.AddField("**/Binaries", true);
                 json.AddField("**/Cache", true);
                 json.AddField("**/packages", true);
-                json.AddField("**/Content", true);
                 json.AddField("**/Logs", true);
                 json.AddField("**/Screenshots", true);
                 json.AddField("**/Output", true);
@@ -455,6 +509,7 @@ namespace Flax.Build.Projects.VisualStudioCode
                 json.AddField("gulp.autoDetect", "off");
                 json.AddField("jake.autoDetect", "off");
                 json.AddField("grunt.autoDetect", "off");
+                json.AddField("omnisharp.defaultLaunchSolution", solution.Name + ".sln");
                 json.EndObject();
 
                 // Folders

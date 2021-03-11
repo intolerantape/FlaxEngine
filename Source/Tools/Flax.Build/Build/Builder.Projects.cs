@@ -156,18 +156,34 @@ namespace Flax.Build
             using (new ProfileEventScope("GenerateProjects"))
             {
                 // Pick the project format
-                ProjectFormat projectFormat = Platform.BuildPlatform.DefaultProjectFormat;
-                if (Configuration.ProjectFormatVS2019)
-                    projectFormat = ProjectFormat.VisualStudio2019;
-                else if (Configuration.ProjectFormatVS2017)
-                    projectFormat = ProjectFormat.VisualStudio2017;
-                else if (Configuration.ProjectFormatVS2015)
-                    projectFormat = ProjectFormat.VisualStudio2015;
-                else if (Configuration.ProjectFormatVSCode)
-                    projectFormat = ProjectFormat.VisualStudioCode;
-                else if (!string.IsNullOrEmpty(Configuration.ProjectFormatCustom))
-                    projectFormat = ProjectFormat.Custom;
+                List<ProjectFormat> projectFormats = new List<ProjectFormat>();
 
+                if (Configuration.ProjectFormatVS2019)
+                    projectFormats.Add(ProjectFormat.VisualStudio2019);
+                if (Configuration.ProjectFormatVS2017)
+                    projectFormats.Add(ProjectFormat.VisualStudio2017);
+                if (Configuration.ProjectFormatVS2015)
+                    projectFormats.Add(ProjectFormat.VisualStudio2015);
+                if (Configuration.ProjectFormatVSCode)
+                    projectFormats.Add(ProjectFormat.VisualStudioCode);
+                if (!string.IsNullOrEmpty(Configuration.ProjectFormatCustom))
+                    projectFormats.Add(ProjectFormat.Custom);
+
+                if (projectFormats.Count == 0)
+                    projectFormats.Add(Platform.BuildPlatform.DefaultProjectFormat);
+
+                foreach (ProjectFormat projectFormat in projectFormats)
+                    GenerateProject(projectFormat);
+            }
+        }
+
+        /// <summary>
+        /// Generates project files for the specified format.
+        /// </summary>
+        public static void GenerateProject(ProjectFormat projectFormat)
+        {
+            using (new ProfileEventScope("GenerateProject" + projectFormat.ToString()))
+            {
                 // Setup
                 var rules = GenerateRulesAssembly();
                 var rootProject = Globals.Project;
@@ -230,7 +246,7 @@ namespace Flax.Build
                             // Get all modules aggregated into all binary modules used in all configurations of this target
                             foreach (var configurationData in mainProject.Configurations)
                             {
-                                var configurationBinaryModules = GetBinaryModules(rules, configurationData.Target, configurationData.Modules);
+                                var configurationBinaryModules = GetBinaryModules(rootProject, configurationData.Target, configurationData.Modules);
                                 foreach (var configurationBinaryModule in configurationBinaryModules)
                                 {
                                     // Skip if none of the included binary modules is inside the project workspace (eg. merged external binary modules from engine to game project)
@@ -256,7 +272,7 @@ namespace Flax.Build
                                         {
                                             var referenceBuildOptions = GetBuildOptions(referenceTarget, configurationData.TargetBuildOptions.Platform, configurationData.TargetBuildOptions.Toolchain, configurationData.Architecture, configurationData.Configuration, reference.Project.ProjectFolderPath);
                                             var referenceModules = CollectModules(rules, referenceBuildOptions.Platform, referenceTarget, referenceBuildOptions, referenceBuildOptions.Toolchain, referenceBuildOptions.Architecture, referenceBuildOptions.Configuration);
-                                            var referenceBinaryModules = GetBinaryModules(rules, referenceTarget, referenceModules);
+                                            var referenceBinaryModules = GetBinaryModules(rootProject, referenceTarget, referenceModules);
                                             foreach (var binaryModule in referenceBinaryModules)
                                             {
                                                 project.Defines.Add(binaryModule.Key.ToUpperInvariant() + "_API=");

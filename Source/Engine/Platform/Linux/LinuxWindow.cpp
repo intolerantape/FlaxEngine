@@ -31,6 +31,7 @@
 #define _NET_WM_STATE_REMOVE 0L // remove/unset property
 #define _NET_WM_STATE_ADD 1L // add/set property
 #define _NET_WM_STATE_TOGGLE 2L // toggle property
+#define DefaultDPI 96
 
 // Window routines function prolog
 #define LINUX_WINDOW_PROLOG X11::Display* display = (X11::Display*)LinuxPlatform::GetXDisplay(); X11::Window window =  (X11::Window)_window
@@ -50,11 +51,32 @@ LinuxWindow::LinuxWindow(const CreateWindowSettings& settings)
 	: WindowBase(settings)
 {
 	// Cache data
-	int32 x = Math::TruncToInt(settings.Position.X);
-	int32 y = Math::TruncToInt(settings.Position.Y);
 	int32 width = Math::TruncToInt(settings.Size.X);
 	int32 height = Math::TruncToInt(settings.Size.Y);
 	_clientSize = Vector2((float)width, (float)height);
+    int32 x = 0, y = 0;
+	switch (settings.StartPosition)
+    {
+    case WindowStartPosition::CenterParent:
+        if (settings.Parent)
+        {
+            Rectangle parentBounds = settings.Parent->GetClientBounds();
+            x = Math::TruncToInt(parentBounds.Location.X + (parentBounds.Size.X - _clientSize.X) * 0.5f);
+            y = Math::TruncToInt(parentBounds.Location.Y + (parentBounds.Size.Y - _clientSize.Y) * 0.5f);
+        }
+        break;
+    case WindowStartPosition::CenterScreen:
+        {
+            Vector2 desktopSize = Platform::GetDesktopSize();
+            x = Math::TruncToInt((desktopSize.X - _clientSize.X) * 0.5f);
+            y = Math::TruncToInt((desktopSize.Y - _clientSize.Y) * 0.5f);
+        }
+        break;
+    case WindowStartPosition::Manual:
+        x = Math::TruncToInt(settings.Position.X);
+        y = Math::TruncToInt(settings.Position.Y);
+        break;
+	}
 	_resizeDisabled = !settings.HasSizingFrame;
 
 	auto display = (X11::Display*)LinuxPlatform::GetXDisplay();
@@ -78,27 +100,11 @@ LinuxWindow::LinuxWindow(const CreateWindowSettings& settings)
 
 	// TODO: implement all window settings
 	/*
-	WindowStartPosition StartPosition;
 	bool Fullscreen;
-	bool HasBorder;
-	bool AllowInput;
 	bool AllowMinimize;
 	bool AllowMaximize;
 	bool AllowDragAndDrop;
-	bool IsTopmost;
-	bool IsRegularWindow;
 	*/
-
-	switch (settings.StartPosition)
-	{
-		case WindowStartPosition::CenterParent:
-			break;
-		case WindowStartPosition::CenterScreen:
-			break;
-		case WindowStartPosition::Manual:
-			break;
-		default: ;
-	}
 
 	const X11::Window window = X11::XCreateWindow(
 		display, X11::XRootWindow(display, screen), x, y,
@@ -106,8 +112,12 @@ LinuxWindow::LinuxWindow(const CreateWindowSettings& settings)
 		visualInfo->visual,
 		CWBackPixel | CWBorderPixel | CWEventMask | CWColormap, &windowAttributes);
 	_window = window;
-
 	LinuxWindow::SetTitle(settings.Title);
+
+	// Link process id with window
+	X11::Atom wmPid = X11::XInternAtom(display, "_NET_WM_PID", 0);
+	const uint64 pid = Platform::GetCurrentProcessId();
+	X11::XChangeProperty(display, window, wmPid, 6, 32, PropModeReplace, (unsigned char*)&pid, 1);
 
 	// Position/size might have (and usually will) get overridden by the WM, so re-apply them
 	X11::XSizeHints hints;
@@ -131,14 +141,20 @@ LinuxWindow::LinuxWindow(const CreateWindowSettings& settings)
 		hints.max_width = (int)settings.MaximumSize.X;
 		hints.min_height = (int)settings.MinimumSize.Y;
 		hints.max_height = (int)settings.MaximumSize.Y;
+		hints.flags |= USSize;
 	}
 	X11::XSetNormalHints(display, window, &hints);
 
 	// Ensures the child window is always on top of the parent window
 	if (settings.Parent)
+	{
 		X11::XSetTransientForHint(display, window, (X11::Window)((LinuxWindow*)settings.Parent)->GetNativePtr());
+	}
 
-	// Set mask
+    _dpi = Platform::GetDpi();
+    _dpiScale = (float)_dpi / (float)DefaultDPI;
+    
+	// Set input mask
 	long eventMask =
 			ExposureMask | FocusChangeMask |
 			KeyPressMask | KeyReleaseMask |
@@ -154,9 +170,63 @@ LinuxWindow::LinuxWindow(const CreateWindowSettings& settings)
 	// Make sure we get the window delete message from WM
 	X11::XSetWMProtocols(display, window, &xAtomDeleteWindow, 1);
 
-	// Hide from taskbar if need to
+	// Adjust style for borderless windows
+	if (!settings.HasBorder)
+	{
+        // [Reference: https://www.tonyobryan.com//index.php?article=9]
+		typedef struct X11Hints
+		{
+			unsigned long flags;
+			unsigned long functions;
+			unsigned long decorations;
+			long inputMode;
+			unsigned long status;
+		} X11Hints;
+		X11Hints hints;
+		hints.flags = 2;
+		hints.decorations = 0;
+		X11::Atom wmHints = X11::XInternAtom(display, "_MOTIF_WM_HINTS", 0);
+		X11::Atom property;
+		if (wmHints)
+			X11::XChangeProperty(display, window, property, property, 32, PropModeReplace, (unsigned char*)&hints, 5);
+	}
+
+	// Adjust type for utility windows
+	if (!settings.IsRegularWindow)
+	{
+		X11::Atom value = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DOCK", 0);
+		X11::Atom wmType = XInternAtom(display, "_NET_WM_WINDOW_TYPE", 0);
+		if (value && wmType)
+			X11::XChangeProperty(display, window, wmType, (X11::Atom)4, 32, PropModeReplace, (unsigned char*)&value, 1);
+	}
+
+	// Initialize state
+	X11::Atom wmState = X11::XInternAtom(display, "_NET_WM_STATE", 0);
+	X11::Atom wmStateAbove = X11::XInternAtom(display, "_NET_WM_STATE_ABOVE", 0);
+	X11::Atom wmSateSkipTaskbar = X11::XInternAtom(display, "_NET_WM_STATE_SKIP_TASKBAR", 0);
+	X11::Atom wmStateSkipPager = X11::XInternAtom(display, "_NET_WM_STATE_SKIP_PAGER", 0);
+	X11::Atom wmStateFullscreen = X11::XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", 0);
+	X11::Atom states[2];
+	int32 statesCount = 0;
+	if (settings.IsTopmost)
+	{
+		states[statesCount++] = wmStateAbove;
+	}
 	if (!settings.ShowInTaskbar)
-		ShowOnTaskbar(false);
+	{
+		states[statesCount++] = wmSateSkipTaskbar;
+		states[statesCount++] = wmStateSkipPager;
+	}
+	if (settings.Fullscreen)
+	{
+		states[statesCount++] = wmStateFullscreen;
+	}
+	X11::XChangeProperty(display, window, wmState, (X11::Atom)4, 32, PropModeReplace, (unsigned char*)states, statesCount);
+
+	// Sync
+	X11::XFlush(display);
+	X11::XSync(display, 0);
+	X11::XFree(visualInfo);
 }
 
 LinuxWindow::~LinuxWindow()
@@ -175,6 +245,7 @@ void LinuxWindow::Show()
 {
 	if (!_visible)
 	{
+        InitSwapChain();
         if (_showAfterFirstPaint)
         {
             if (RenderTask)
@@ -186,10 +257,7 @@ void LinuxWindow::Show()
 		LINUX_WINDOW_PROLOG;
 		X11::XMapWindow(display, window);
 		X11::XFlush(display);
-		if (_settings.AllowInput && _settings.ActivateWhenFirstShown)
-		{
-			Focus();
-		}
+		_focusOnMapped = _settings.AllowInput && _settings.ActivateWhenFirstShown;
 
 		// Base
 		WindowBase::Show();
@@ -230,13 +298,13 @@ void LinuxWindow::Restore()
 void LinuxWindow::BringToFront(bool force)
 {
 	LINUX_WINDOW_PROLOG;
-	X11::Atom net_active_window = X11::XInternAtom(display, "_NET_ACTIVE_WINDOW", 0);
+	X11::Atom activeWindow = X11::XInternAtom(display, "_NET_ACTIVE_WINDOW", 0);
 
 	X11::XEvent event;
 	Platform::MemoryClear(&event, sizeof(event));
 	event.type = ClientMessage;
 	event.xclient.window = window;
-	event.xclient.message_type = net_active_window;
+	event.xclient.message_type = activeWindow;
 	event.xclient.format = 32;
 	event.xclient.data.l[0] = 1;
 	event.xclient.data.l[1] = CurrentTime;
@@ -248,6 +316,11 @@ void LinuxWindow::BringToFront(bool force)
 bool LinuxWindow::IsClosed() const
 {
 	return _isClosing;
+}
+
+bool LinuxWindow::IsForegroundWindow() const
+{
+	return _focused || _focusOnMapped;
 }
 
 void LinuxWindow::SetClientBounds(const Rectangle& clientArea)
@@ -263,13 +336,10 @@ void LinuxWindow::SetClientBounds(const Rectangle& clientArea)
 	{
 		X11::XSizeHints hints;
 		hints.flags = PMinSize | PMaxSize;
-
 		hints.min_height = height;
 		hints.max_height = height;
-
 		hints.min_width = width;
 		hints.max_width = width;
-
 		X11::XSetNormalHints(display, window, &hints);
 	}
 
@@ -398,16 +468,17 @@ void LinuxWindow::CheckForWindowResize()
 
 	LINUX_WINDOW_PROLOG;
 
-	// Cache client size
+	// Get client size
 	X11::XWindowAttributes xwa;
 	X11::XGetWindowAttributes(display, window, &xwa);
-	int32 width = xwa.width;
-	int32 height = xwa.height;
-	_clientSize = Vector2(static_cast<float>(width), static_cast<float>(height));
+	const int32 width = xwa.width;
+	const int32 height = xwa.height;
+	const Vector2 clientSize((float)width, (float)height);
 
     // Check if window size has been changed
-    if (width > 0 && height > 0 && (_swapChain == nullptr || width != _swapChain->GetWidth() || height != _swapChain->GetHeight()))
-    {
+	if (clientSize != _clientSize && width > 0 && height > 0)
+	{
+		_clientSize = clientSize;
         OnResize(width, height);
     }
 }
@@ -453,7 +524,7 @@ void LinuxWindow::OnButtonPress(void* event)
 {
 	auto buttonEvent = (X11::XButtonPressedEvent*)event;
 
-	Vector2 mousePos((float)buttonEvent->x_root, (float)buttonEvent->y_root);
+	Vector2 mousePos((float)buttonEvent->x, (float)buttonEvent->y);
 	MouseButton mouseButton;
 	switch (buttonEvent->button)
 	{
@@ -491,7 +562,7 @@ void LinuxWindow::OnButtonPress(void* event)
 void LinuxWindow::OnButtonRelease(void* event)
 {
 	auto buttonEvent = (X11::XButtonReleasedEvent*)event;
-	Vector2 mousePos((float)buttonEvent->x_root, (float)buttonEvent->y_root);
+	Vector2 mousePos((float)buttonEvent->x, (float)buttonEvent->y);
 	switch (buttonEvent->button)
 	{
 	case Button1:
@@ -527,6 +598,17 @@ void LinuxWindow::OnLeaveNotify(void* event)
 	Input::Mouse->OnMouseLeave(this);
 }
 
+void LinuxWindow::OnConfigureNotify(void* event)
+{
+	auto configureEvent = (X11::XConfigureEvent*)event;
+	const Vector2 clientSize((float)configureEvent->width, (float)configureEvent->height);
+	if (clientSize != _clientSize)
+	{
+		_clientSize = clientSize;
+		OnResize(configureEvent->width, configureEvent->height);
+	}
+}
+
 void LinuxWindow::Maximize(bool enable)
 {
 	LINUX_WINDOW_PROLOG;
@@ -535,17 +617,27 @@ void LinuxWindow::Maximize(bool enable)
 	X11::Atom wmMaxHorz = X11::XInternAtom(display, "_NET_WM_STATE_MAXIMIZED_HORZ", 0);
 	X11::Atom wmMaxVert = X11::XInternAtom(display, "_NET_WM_STATE_MAXIMIZED_VERT", 0);
 
-	X11::XEvent event;
-	Platform::MemoryClear(&event, sizeof(event));
-	event.type = ClientMessage;
-	event.xclient.window = window;
-	event.xclient.message_type = wmState;
-	event.xclient.format = 32;
-	event.xclient.data.l[0] = enable ? _NET_WM_STATE_ADD : _NET_WM_STATE_REMOVE;
-	event.xclient.data.l[1] = wmMaxHorz;
-	event.xclient.data.l[2] = wmMaxVert;
+	if (IsWindowMapped())
+	{
+		X11::XEvent event;
+		Platform::MemoryClear(&event, sizeof(event));
+		event.type = ClientMessage;
+		event.xclient.window = window;
+		event.xclient.message_type = wmState;
+		event.xclient.format = 32;
+		event.xclient.data.l[0] = enable ? _NET_WM_STATE_ADD : _NET_WM_STATE_REMOVE;
+		event.xclient.data.l[1] = wmMaxHorz;
+		event.xclient.data.l[2] = wmMaxVert;
 
-	XSendEvent(display, X11_DefaultRootWindow(display), 0, SubstructureRedirectMask | SubstructureNotifyMask, &event);
+		XSendEvent(display, X11_DefaultRootWindow(display), 0, SubstructureRedirectMask | SubstructureNotifyMask, &event);
+	}
+	else if (enable)
+	{
+		X11::Atom states[2];
+        states[0] = wmMaxVert;
+        states[1] = wmMaxHorz;
+		X11::XChangeProperty(display, window, wmState, (X11::Atom)4, 32, PropModeReplace, (unsigned char*)states, 2);
+	}
 }
 
 void LinuxWindow::Minimize(bool enable)
@@ -563,31 +655,6 @@ void LinuxWindow::Minimize(bool enable)
 	event.xclient.data.l[0] = enable ? WM_IconicState : WM_NormalState;
 
 	XSendEvent(display, X11_DefaultRootWindow(display), 0, SubstructureRedirectMask | SubstructureNotifyMask, &event);
-}
-
-void LinuxWindow::ShowOnTaskbar(bool enable)
-{
-	LINUX_WINDOW_PROLOG;
-
-	X11::Atom wmState = X11::XInternAtom(display, "_NET_WM_STATE", 0);
-	X11::Atom wmSkipTaskbar = X11::XInternAtom(display, "_NET_WM_STATE_SKIP_TASKBAR", 0);
-	X11::Atom wmSkipPager = X11::XInternAtom(display, "_NET_WM_STATE_SKIP_PAGER", 0);
-
-	X11::XEvent event;
-	Platform::MemoryClear(&event, sizeof(event));
-	event.type = ClientMessage;
-	event.xclient.window = window;
-	event.xclient.message_type = wmState;
-	event.xclient.format = 32;
-	event.xclient.data.l[0] = enable ? _NET_WM_STATE_REMOVE : _NET_WM_STATE_ADD;
-	event.xclient.data.l[1] = wmSkipTaskbar;
-
-	X11::XSendEvent(display, X11_DefaultRootWindow(display), 0,SubstructureRedirectMask | SubstructureNotifyMask, &event);
-
-	event.xclient.data.l[1] = wmSkipPager;
-	X11::XSendEvent(display, X11_DefaultRootWindow(display), 0, SubstructureRedirectMask | SubstructureNotifyMask, &event);
-
-	X11::XSync(display, 0);
 }
 
 bool LinuxWindow::IsWindowMapped()
@@ -623,7 +690,14 @@ void LinuxWindow::SetOpacity(const float opacity)
 
 void LinuxWindow::Focus()
 {
-	// TODO: impl this
+	if (_focused || !IsWindowMapped())
+		return;
+
+	LINUX_WINDOW_PROLOG;
+
+	X11::XSetInputFocus(display, window, RevertToPointerRoot, CurrentTime);
+	X11::XFlush(display);
+	X11::XSync(display, 0);
 }
 
 void LinuxWindow::SetTitle(const StringView& title)
@@ -633,6 +707,7 @@ void LinuxWindow::SetTitle(const StringView& title)
 	const char* text = titleAnsi.Get();
 
 	X11::XStoreName(display, window, text);
+	X11::XSetIconName(display, window, text);
 
 	const X11::Atom netWmName = X11::XInternAtom(display, "_NET_WM_NAME", false);
 	const X11::Atom utf8String = X11::XInternAtom(display, "UTF8_STRING", false);

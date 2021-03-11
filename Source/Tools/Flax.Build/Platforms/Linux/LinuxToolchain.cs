@@ -20,12 +20,12 @@ namespace Flax.Build.Platforms
         /// <param name="platform">The platform.</param>
         /// <param name="architecture">The target architecture.</param>
         public LinuxToolchain(LinuxPlatform platform, TargetArchitecture architecture)
-        : base(platform, architecture, platform.ToolchainRoot, platform.UseSystemCompiler)
+        : base(platform, architecture, platform.ToolchainRoot, platform.Compiler)
         {
             // Setup system paths
             SystemIncludePaths.Add(Path.Combine(ToolsetRoot, "usr", "include"));
             SystemIncludePaths.Add(Path.Combine(ToolsetRoot, "include", "c++", "5.2.0"));
-            SystemIncludePaths.Add(Path.Combine(ToolsetRoot, "lib", "clang", "7.0.1", "include"));
+            SystemIncludePaths.Add(Path.Combine(ToolsetRoot, "lib", "clang", ClangVersion.Major.ToString(), "include"));
         }
 
         /// <inheritdoc />
@@ -43,8 +43,22 @@ namespace Flax.Build.Platforms
         {
             base.SetupCompileCppFilesArgs(graph, options, args, outputPath);
 
+            // Hide all symbols by default
+            args.Add("-fvisibility-inlines-hidden");
+            args.Add("-fvisibility-ms-compat");
+
             args.Add(string.Format("-target {0}", ArchitectureName));
             args.Add(string.Format("--sysroot=\"{0}\"", ToolsetRoot.Replace('\\', '/')));
+
+            if (Architecture == TargetArchitecture.x64)
+            {
+                args.Add("-mssse3");
+            }
+
+            if (options.LinkEnv.Output == LinkerOutput.SharedLibrary)
+            {
+                args.Add("-fPIC");
+            }
         }
 
         /// <inheritdoc />
@@ -52,7 +66,7 @@ namespace Flax.Build.Platforms
         {
             base.SetupLinkFilesArgs(graph, options, args, outputFilePath);
 
-            // Speed up build
+            args.Add("-Wl,-rpath,\"\\$ORIGIN\"");
             //args.Add("-Wl,--as-needed");
             args.Add("-Wl,--hash-style=gnu");
             //args.Add("-Wl,--build-id");
@@ -60,7 +74,10 @@ namespace Flax.Build.Platforms
             if (options.LinkEnv.Output == LinkerOutput.SharedLibrary)
             {
                 args.Add("-shared");
-                args.Add(string.Format("-soname=\"{0}\"", Path.GetFileNameWithoutExtension(outputFilePath)));
+                var soname = Path.GetFileNameWithoutExtension(outputFilePath);
+                if (soname.StartsWith("lib"))
+                    soname = soname.Substring(3);
+                //args.Add(string.Format("-Wl,-soname=\"{0}\"", soname));
             }
 
             args.Add(string.Format("-target {0}", ArchitectureName));

@@ -6,7 +6,10 @@
 
 class Scene;
 
-class NavMeshBuilder
+/// <summary>
+/// The navigation mesh building utility.
+/// </summary>
+class FLAXENGINE_API NavMeshBuilder
 {
 public:
 

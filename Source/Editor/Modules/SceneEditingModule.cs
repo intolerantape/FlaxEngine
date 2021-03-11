@@ -195,12 +195,63 @@ namespace FlaxEditor.Modules
             OnSelectionChanged();
         }
 
+        private void OnDirty(ActorNode node)
+        {
+            var options = Editor.Options.Options;
+            var isPlayMode = Editor.StateMachine.IsPlayMode;
+            var actor = node.Actor;
+
+            // Auto CSG mesh rebuild
+            if (!isPlayMode && options.General.AutoRebuildCSG)
+            {
+                if (actor is BoxBrush && actor.Scene)
+                    actor.Scene.BuildCSG(options.General.AutoRebuildCSGTimeoutMs);
+            }
+
+            // Auto NavMesh rebuild
+            if (!isPlayMode && options.General.AutoRebuildNavMesh && actor.Scene && node.AffectsNavigationWithChildren)
+            {
+                var bounds = actor.BoxWithChildren;
+                Navigation.BuildNavMesh(actor.Scene, bounds, options.General.AutoRebuildNavMeshTimeoutMs);
+            }
+        }
+
+        private void OnDirty(IEnumerable<SceneGraphNode> objects)
+        {
+            var options = Editor.Options.Options;
+            var isPlayMode = Editor.StateMachine.IsPlayMode;
+
+            // Auto CSG mesh rebuild
+            if (!isPlayMode && options.General.AutoRebuildCSG)
+            {
+                foreach (var obj in objects)
+                {
+                    if (obj is ActorNode node && node.Actor is BoxBrush)
+                        node.Actor.Scene.BuildCSG(options.General.AutoRebuildCSGTimeoutMs);
+                }
+            }
+
+            // Auto NavMesh rebuild
+            if (!isPlayMode && options.General.AutoRebuildNavMesh)
+            {
+                foreach (var obj in objects)
+                {
+                    if (obj is ActorNode node && node.Actor.Scene && node.AffectsNavigationWithChildren)
+                    {
+                        var bounds = node.Actor.BoxWithChildren;
+                        Navigation.BuildNavMesh(node.Actor.Scene, bounds, options.General.AutoRebuildNavMeshTimeoutMs);
+                    }
+                }
+            }
+        }
+
         /// <summary>
         /// Spawns the specified actor to the game (with undo).
         /// </summary>
         /// <param name="actor">The actor.</param>
         /// <param name="parent">The parent actor. Set null as default.</param>
-        public void Spawn(Actor actor, Actor parent = null)
+        /// <param name="autoSelect">True if automatically select the spawned actor, otherwise false.</param>
+        public void Spawn(Actor actor, Actor parent = null, bool autoSelect = true)
         {
             bool isPlayMode = Editor.StateMachine.IsPlayMode;
 
@@ -225,7 +276,15 @@ namespace FlaxEditor.Modules
             actorNode.PostSpawn();
 
             // Create undo action
-            var action = new DeleteActorsAction(new List<SceneGraphNode>(1) { actorNode }, true);
+            IUndoAction action = new DeleteActorsAction(new List<SceneGraphNode>(1) { actorNode }, true);
+            if (autoSelect)
+            {
+                var before = Selection.ToArray();
+                Selection.Clear();
+                Selection.Add(actorNode);
+                OnSelectionChanged();
+                action = new MultiUndoAction(action, new SelectionChangeAction(before, Selection.ToArray(), OnSelectionUndo));
+            }
             Undo.AddAction(action);
 
             // Mark scene as dirty
@@ -233,21 +292,92 @@ namespace FlaxEditor.Modules
 
             SpawnEnd?.Invoke();
 
-            var options = Editor.Options.Options;
+            OnDirty(actorNode);
+        }
 
-            // Auto CSG mesh rebuild
-            if (!isPlayMode && options.General.AutoRebuildCSG)
+        /// <summary>
+        /// Converts the selected actor to another type.
+        /// </summary>
+        /// <param name="to">The type to convert in.</param>
+        public void Convert(Type to)
+        {
+            if (!Editor.SceneEditing.HasSthSelected || !(Editor.SceneEditing.Selection[0] is ActorNode))
+                return;
+
+            if (Level.IsAnySceneLoaded == false)
+                throw new InvalidOperationException("Cannot spawn actor when no scene is loaded.");
+
+            var actionList = new IUndoAction[4];
+            Actor old = ((ActorNode)Editor.SceneEditing.Selection[0]).Actor;
+            Actor actor = (Actor)FlaxEngine.Object.New(to);
+            var parent = old.Parent;
+            var orderInParent = old.OrderInParent;
+
+            SelectionDeleteBegin?.Invoke();
+
+            actionList[0] = new SelectionChangeAction(Selection.ToArray(), new SceneGraphNode[0], OnSelectionUndo);
+            actionList[0].Do();
+
+            actionList[1] = new DeleteActorsAction(new List<SceneGraphNode>
             {
-                if (actor is BoxBrush && actor.Scene)
-                    actor.Scene.BuildCSG(options.General.AutoRebuildCSGTimeoutMs);
+                Editor.Instance.Scene.GetActorNode(old)
+            });
+            actionList[1].Do();
+
+            SelectionDeleteEnd?.Invoke();
+
+            SpawnBegin?.Invoke();
+
+            // Copy properties
+            actor.Transform = old.Transform;
+            actor.StaticFlags = old.StaticFlags;
+            actor.HideFlags = old.HideFlags;
+            actor.Layer = old.Layer;
+            actor.Tag = old.Tag;
+            actor.Name = old.Name;
+            actor.IsActive = old.IsActive;
+
+            // Spawn actor
+            Level.SpawnActor(actor, parent);
+            if (parent != null)
+                actor.OrderInParent = orderInParent;
+            if (Editor.StateMachine.IsPlayMode)
+                actor.StaticFlags = StaticFlags.None;
+
+            // Move children
+            for (var i = old.ScriptsCount - 1; i >= 0; i--)
+            {
+                var script = old.Scripts[i];
+                script.Actor = actor;
+                Guid newid = Guid.NewGuid();
+                FlaxEngine.Object.Internal_ChangeID(FlaxEngine.Object.GetUnmanagedPtr(script), ref newid);
+            }
+            for (var i = old.Children.Length - 1; i >= 0; i--)
+            {
+                old.Children[i].Parent = actor;
             }
 
-            // Auto NavMesh rebuild
-            if (!isPlayMode && options.General.AutoRebuildNavMesh && actor.Scene && (actor.StaticFlags & StaticFlags.Navigation) == StaticFlags.Navigation)
+            var actorNode = Editor.Instance.Scene.GetActorNode(actor);
+            if (actorNode == null)
+                throw new InvalidOperationException("Failed to create scene node for the spawned actor.");
+
+            actorNode.PostSpawn();
+            Editor.Scene.MarkSceneEdited(actor.Scene);
+
+            actionList[2] = new DeleteActorsAction(new List<SceneGraphNode>
             {
-                var bounds = actor.BoxWithChildren;
-                Navigation.BuildNavMesh(actor.Scene, bounds, options.General.AutoRebuildNavMeshTimeoutMs);
-            }
+                actorNode
+            }, true);
+
+            actionList[3] = new SelectionChangeAction(new SceneGraphNode[0], new SceneGraphNode[] { actorNode }, OnSelectionUndo);
+            actionList[3].Do();
+
+            var actions = new MultiUndoAction(actionList);
+            Undo.AddAction(actions);
+
+            SpawnEnd?.Invoke();
+
+            OnDirty(actorNode);
         }
 
         /// <summary>
@@ -259,8 +389,6 @@ namespace FlaxEditor.Modules
             var objects = Selection.Where(x => x.CanDelete).ToList().BuildAllNodes().Where(x => x.CanDelete).ToList();
             if (objects.Count == 0)
                 return;
-
-            bool isPlayMode = Editor.StateMachine.IsPlayMode;
 
             SelectionDeleteBegin?.Invoke();
 
@@ -281,30 +409,7 @@ namespace FlaxEditor.Modules
 
             SelectionDeleteEnd?.Invoke();
 
-            var options = Editor.Options.Options;
-
-            // Auto CSG mesh rebuild
-            if (!isPlayMode && options.General.AutoRebuildCSG)
-            {
-                foreach (var obj in objects)
-                {
-                    if (obj is ActorNode node && node.Actor is BoxBrush)
-                        node.Actor.Scene.BuildCSG(options.General.AutoRebuildCSGTimeoutMs);
-                }
-            }
-
-            // Auto NavMesh rebuild
-            if (!isPlayMode && options.General.AutoRebuildNavMesh)
-            {
-                foreach (var obj in objects)
-                {
-                    if (obj is ActorNode node && node.Actor.Scene && (node.Actor.StaticFlags & StaticFlags.Navigation) == StaticFlags.Navigation)
-                    {
-                        var bounds = node.Actor.BoxWithChildren;
-                        Navigation.BuildNavMesh(node.Actor.Scene, bounds, options.General.AutoRebuildNavMeshTimeoutMs);
-                    }
-                }
-            }
+            OnDirty(objects);
         }
 
         /// <summary>
@@ -358,7 +463,15 @@ namespace FlaxEditor.Modules
             var pasteAction = PasteActorsAction.Paste(data, pasteTargetActor?.ID ?? Guid.Empty);
             if (pasteAction != null)
             {
-                OnPasteAction(pasteAction);
+                pasteAction.Do(out _, out var nodeParents);
+
+                // Select spawned objects (parents only)
+                var selectAction = new SelectionChangeAction(Selection.ToArray(), nodeParents.Cast<SceneGraphNode>().ToArray(), OnSelectionUndo);
+                selectAction.Do();
+
+                // Build single compound undo action that pastes the actors and selects the created objects (parents only)
+                Undo.AddAction(new MultiUndoAction(pasteAction, selectAction));
+                OnSelectionChanged();
             }
         }
 
@@ -377,12 +490,57 @@ namespace FlaxEditor.Modules
         public void Duplicate()
         {
             // Peek things that can be copied (copy all actors)
-            var objects = Selection.Where(x => x.CanCopyPaste).ToList().BuildAllNodes().Where(x => x.CanCopyPaste && x is ActorNode).ToList();
-            if (objects.Count == 0)
+            var nodes = Selection.Where(x => x.CanDuplicate).ToList().BuildAllNodes();
+            if (nodes.Count == 0)
                 return;
+            var actors = new List<Actor>();
+            var newSelection = new List<SceneGraphNode>();
+            List<IUndoAction> customUndoActions = null;
+            foreach (var node in nodes)
+            {
+                if (node.CanDuplicate)
+                {
+                    if (node is ActorNode actorNode)
+                    {
+                        actors.Add(actorNode.Actor);
+                    }
+                    else
+                    {
+                        var customDuplicatedObject = node.Duplicate(out var customUndoAction);
+                        if (customDuplicatedObject != null)
+                            newSelection.Add(customDuplicatedObject);
+                        if (customUndoAction != null)
+                        {
+                            if (customUndoActions == null)
+                                customUndoActions = new List<IUndoAction>();
+                            customUndoActions.Add(customUndoAction);
+                        }
+                    }
+                }
+            }
+            if (actors.Count == 0)
+            {
+                // Duplicate custom scene graph nodes only without actors
+                if (newSelection.Count != 0)
+                {
+                    // Select spawned objects (parents only)
+                    var selectAction = new SelectionChangeAction(Selection.ToArray(), newSelection.ToArray(), OnSelectionUndo);
+                    selectAction.Do();
+
+                    // Build a single compound undo action that pastes the actors, pastes custom stuff (scene graph extension) and selects the created objects (parents only)
+                    var customUndoActionsCount = customUndoActions?.Count ?? 0;
+                    var undoActions = new IUndoAction[1 + customUndoActionsCount];
+                    for (int i = 0; i < customUndoActionsCount; i++)
+                        undoActions[i] = customUndoActions[i];
+                    undoActions[undoActions.Length - 1] = selectAction;
+
+                    Undo.AddAction(new MultiUndoAction(undoActions));
+                    OnSelectionChanged();
+                }
+                return;
+            }
 
             // Serialize actors
-            var actors = objects.ConvertAll(x => ((ActorNode)x).Actor);
             var data = Actor.ToBytes(actors.ToArray());
             if (data == null)
             {
@@ -394,20 +552,24 @@ namespace FlaxEditor.Modules
             var pasteAction = PasteActorsAction.Duplicate(data, Guid.Empty);
             if (pasteAction != null)
             {
-                OnPasteAction(pasteAction);
+                pasteAction.Do(out _, out var nodeParents);
+
+                // Select spawned objects (parents only)
+                newSelection.AddRange(nodeParents);
+                var selectAction = new SelectionChangeAction(Selection.ToArray(), newSelection.ToArray(), OnSelectionUndo);
+                selectAction.Do();
+
+                // Build a single compound undo action that pastes the actors, pastes custom stuff (scene graph extension) and selects the created objects (parents only)
+                var customUndoActionsCount = customUndoActions?.Count ?? 0;
+                var undoActions = new IUndoAction[2 + customUndoActionsCount];
+                undoActions[0] = pasteAction;
+                for (int i = 0; i < customUndoActionsCount; i++)
+                    undoActions[i + 1] = customUndoActions[i];
+                undoActions[undoActions.Length - 1] = selectAction;
+
+                Undo.AddAction(new MultiUndoAction(undoActions));
+                OnSelectionChanged();
             }
-        }
-
-        private void OnPasteAction(PasteActorsAction pasteAction)
-        {
-            pasteAction.Do(out _, out var nodeParents);
-
-            // Select spawned objects
-            var selectAction = new SelectionChangeAction(Selection.ToArray(), nodeParents.Cast<SceneGraphNode>().ToArray(), OnSelectionUndo);
-            selectAction.Do();
-
-            Undo.AddAction(new MultiUndoAction(pasteAction, selectAction));
-            OnSelectionChanged();
         }
 
         /// <summary>

@@ -36,6 +36,7 @@
 #include "Engine/Profiler/Profiler.h"
 #if USE_EDITOR
 #include "Editor/Editor.h"
+#include "Editor/ProjectInfo.h"
 #include "Editor/Managed/ManagedEditor.h"
 #else
 #include "Engine/Utilities/Encryption.h"
@@ -51,6 +52,9 @@
 namespace EngineImpl
 {
     bool IsReady = false;
+#if !USE_EDITOR
+    bool RunInBackground = false;
+#endif
     String CommandLine = nullptr;
     int32 Fps = 0, FpsAccumulatedFrames = 0;
     double FpsAccumulated = 0.0;
@@ -133,6 +137,9 @@ int32 Engine::Main(const Char* cmdLine)
     Platform::BeforeRun();
     EngineImpl::InitMainWindow();
     Application::BeforeRun();
+#if !USE_EDITOR && (PLATFORM_WINDOWS || PLATFORM_LINUX)
+    EngineImpl::RunInBackground = PlatformSettings::Get()->RunInBackground;
+#endif
     Log::Logger::WriteFloor();
     LOG_FLUSH();
     Time::OnBeforeRun();
@@ -279,11 +286,7 @@ void Engine::OnUpdate()
     bool isGameRunning = true;
     if (mainWindow && !mainWindow->IsFocused())
     {
-#if PLATFORM_WINDOWS || PLATFORM_LINUX
-        isGameRunning = PlatformSettings::Instance()->RunInBackground;
-#else
-        isGameRunning = false;
-#endif
+        isGameRunning = EngineImpl::RunInBackground;
     }
     Time::SetGamePaused(!isGameRunning);
 #endif
@@ -393,8 +396,11 @@ const String& Engine::GetCommandLine()
 
 JsonAsset* Engine::GetCustomSettings(const StringView& key)
 {
+    const auto settings = GameSettings::Get();
+    if (!settings)
+        return nullptr;
     Guid assetId = Guid::Empty;
-    GameSettings::CustomSettings.TryGet(key, assetId);
+    settings->CustomSettings.TryGet(key, assetId);
     return Content::LoadAsync<JsonAsset>(assetId);
 }
 
@@ -548,6 +554,8 @@ void EngineImpl::InitPaths()
     Globals::EngineContentFolder = Globals::StartupFolder / TEXT("Content");
 #if PLATFORM_WINDOWS
     Globals::MonoPath = Globals::StartupFolder / TEXT("Source/Platforms/Editor/Windows/Mono");
+#elif PLATFORM_LINUX
+    Globals::MonoPath = Globals::StartupFolder / TEXT("Source/Platforms/Editor/Linux/Mono");
 #else
     #error "Please specify the Mono data location for Editor on this platform."
 #endif

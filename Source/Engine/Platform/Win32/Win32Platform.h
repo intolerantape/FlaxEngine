@@ -15,6 +15,7 @@ public:
 
     // [PlatformBase]
     static bool Init();
+    static void Exit();
     static void MemoryBarrier();
     static int64 InterlockedExchange(int64 volatile* dst, int64 exchange);
     static int32 InterlockedCompareExchange(int32 volatile* dst, int32 exchange, int32 comperand);
@@ -29,8 +30,9 @@ public:
     static void Prefetch(void const* ptr);
     static void* Allocate(uint64 size, uint64 alignment);
     static void Free(void* ptr);
+    static void* AllocatePages(uint64 numPages, uint64 pageSize);
+    static void FreePages(void* ptr);
     static bool Is64BitPlatform();
-    static BatteryInfo GetBatteryInfo();
     static CPUInfo GetCPUInfo();
     static int32 GetCacheLineSize();
     static MemoryStats GetMemoryStats();

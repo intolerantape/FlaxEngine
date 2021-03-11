@@ -325,6 +325,14 @@ namespace FlaxEngine
         }
 
         /// <summary>
+        /// Gets the conjugated quaternion.
+        /// </summary>
+        public Quaternion Conjugated()
+        {
+            return new Quaternion(-X, -Y, -Z, W);
+        }
+
+        /// <summary>
         /// Conjugates and renormalizes the quaternion.
         /// </summary>
         public void Invert()
@@ -627,7 +635,7 @@ namespace FlaxEngine
         public static float AngleBetween(Quaternion a, Quaternion b)
         {
             float num = Dot(a, b);
-            return num > 0.99999999f ? 0 : Mathf.Acos(Mathf.Min(Mathf.Abs(num), 1f)) * 2f * 57.29578f;
+            return num > 0.9999999f ? 0 : Mathf.Acos(Mathf.Min(Mathf.Abs(num), 1f)) * 2f * 57.29578f;
         }
 
         /// <summary>
@@ -965,6 +973,17 @@ namespace FlaxEngine
         /// </summary>
         /// <param name="eye">The position of the viewer's eye.</param>
         /// <param name="target">The camera look-at target.</param>
+        /// <returns>The created look-at quaternion.</returns>
+        public static Quaternion LookAt(Vector3 eye, Vector3 target)
+        {
+            return LookAt(eye, target, Vector3.Up);
+        }
+
+        /// <summary>
+        /// Creates a left-handed, look-at quaternion.
+        /// </summary>
+        /// <param name="eye">The position of the viewer's eye.</param>
+        /// <param name="target">The camera look-at target.</param>
         /// <param name="up">The camera's up vector.</param>
         /// <returns>The created look-at quaternion.</returns>
         public static Quaternion LookAt(Vector3 eye, Vector3 target, Vector3 up)
@@ -989,12 +1008,32 @@ namespace FlaxEngine
         /// Creates a left-handed, look-at quaternion.
         /// </summary>
         /// <param name="forward">The camera's forward direction.</param>
+        /// <returns>The created look-at quaternion.</returns>
+        public static Quaternion RotationLookAt(Vector3 forward)
+        {
+            return RotationLookAt(forward, Vector3.Up);
+        }
+
+        /// <summary>
+        /// Creates a left-handed, look-at quaternion.
+        /// </summary>
+        /// <param name="forward">The camera's forward direction.</param>
         /// <param name="up">The camera's up vector.</param>
         /// <returns>The created look-at quaternion.</returns>
         public static Quaternion RotationLookAt(Vector3 forward, Vector3 up)
         {
             RotationLookAt(ref forward, ref up, out var result);
             return result;
+        }
+
+        /// <summary>
+        /// Creates a rotation with the specified forward and upwards directions.
+        /// </summary>
+        /// <param name="forward">The forward direction. Direction to orient towards.</param>
+        /// <returns>The calculated quaternion.</returns>
+        public static Quaternion LookRotation(Vector3 forward)
+        {
+            return LookRotation(forward, Vector3.Up);
         }
 
         /// <summary>
@@ -1470,7 +1509,7 @@ namespace FlaxEngine
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator ==(Quaternion left, Quaternion right)
         {
-            return Dot(ref left, ref right) > 0.99999999f;
+            return Dot(ref left, ref right) > 0.9999999f;
         }
 
         /// <summary>
@@ -1485,7 +1524,7 @@ namespace FlaxEngine
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator !=(Quaternion left, Quaternion right)
         {
-            return Dot(ref left, ref right) <= 0.99999999f;
+            return Dot(ref left, ref right) <= 0.9999999f;
         }
 
         /// <summary>
@@ -1597,7 +1636,7 @@ namespace FlaxEngine
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Equals(ref Quaternion other)
         {
-            //return Dot(ref this, ref other) > 0.99999999f;
+            //return Dot(ref this, ref other) > 0.9999999f;
             return Mathf.NearEqual(other.X, X) && Mathf.NearEqual(other.Y, Y) && Mathf.NearEqual(other.Z, Z) && Mathf.NearEqual(other.W, W);
         }
 

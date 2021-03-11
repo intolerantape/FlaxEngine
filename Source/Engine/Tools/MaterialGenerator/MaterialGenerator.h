@@ -6,7 +6,7 @@
 
 #include "Engine/Graphics/Materials/MaterialInfo.h"
 #include "Engine/Graphics/Materials/MaterialParams.h"
-#include "Engine/Content/Utilities/AssetsContainer.h"
+#include "Engine/Content/AssetsContainer.h"
 #include "MaterialLayer.h"
 #include "Types.h"
 
@@ -196,8 +196,14 @@ private:
         Int,
         Uint,
     };
+    enum class ParticleAttributeSpace
+    {
+        AsIs,
+        LocalPosition,
+        LocalDirection,
+    };
 
-    MaterialValue AccessParticleAttribute(Node* caller, const StringView& name, ParticleAttributeValueTypes valueType, const Char* index = nullptr);
+    MaterialValue AccessParticleAttribute(Node* caller, const StringView& name, ParticleAttributeValueTypes valueType, const Char* index = nullptr, ParticleAttributeSpace space = ParticleAttributeSpace::AsIs);
     void prepareLayer(MaterialLayer* layer, bool allowVisibleParams);
 
 public:
@@ -210,8 +216,6 @@ public:
     static MaterialGraphBoxesMapping MaterialGraphBoxesMappings[];
 
     static const MaterialGraphBoxesMapping& GetMaterialRootNodeBox(MaterialGraphBoxes box);
-
-    static byte getStartSrvRegister(MaterialLayer* baseLayer);
 };
 
 #endif

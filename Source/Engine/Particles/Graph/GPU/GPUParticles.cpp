@@ -144,7 +144,7 @@ void GPUParticles::Execute(GPUContext* context, ParticleEmitter* emitter, Partic
     }
 
     // Skip if can
-    SceneRenderTask* viewTask = PARTICLE_EMITTER_GET_VIEW_TASK(effect);
+    SceneRenderTask* viewTask = effect->GetRenderTask();
     const int32 threads = data.Buffer->GPU.ParticlesCountMax + data.GPU.SpawnCount;
     if (data.GPU.DeltaTime <= 0.0f || threads == 0 || !_mainCS)
         return;
@@ -155,7 +155,7 @@ void GPUParticles::Execute(GPUContext* context, ParticleEmitter* emitter, Partic
     // Setup parameters
     MaterialParameter::BindMeta bindMeta;
     bindMeta.Context = context;
-    bindMeta.Buffer0 = hasCB ? _cbData.Get() + sizeof(GPUParticlesData) : nullptr;
+    bindMeta.Constants = hasCB ? _cbData.Get() + sizeof(GPUParticlesData) : nullptr;
     bindMeta.Input = nullptr;
     if (viewTask)
     {

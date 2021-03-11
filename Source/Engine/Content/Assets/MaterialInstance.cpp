@@ -168,9 +168,9 @@ bool MaterialInstance::CanUseLightmap() const
     return _baseMaterial && _baseMaterial->CanUseLightmap();
 }
 
-bool MaterialInstance::CanUseInstancing() const
+bool MaterialInstance::CanUseInstancing(InstancingHandler& handler) const
 {
-    return _baseMaterial && _baseMaterial->CanUseInstancing();
+    return _baseMaterial && _baseMaterial->CanUseInstancing(handler);
 }
 
 void MaterialInstance::Bind(BindParameters& params)

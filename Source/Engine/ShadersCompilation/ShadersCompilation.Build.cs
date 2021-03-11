@@ -50,6 +50,9 @@ public class ShadersCompilation : EngineModule
                 options.PrivateDependencies.Add("ShaderCompilerDX");
             options.PrivateDependencies.Add("ShaderCompilerVulkan");
             break;
+        case TargetPlatform.Linux:
+            options.PrivateDependencies.Add("ShaderCompilerVulkan");
+            break;
         default: throw new InvalidPlatformException(options.Platform.Target);
         }
 

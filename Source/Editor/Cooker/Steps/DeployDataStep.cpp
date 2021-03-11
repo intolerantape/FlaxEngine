@@ -12,6 +12,7 @@ bool DeployDataStep::Perform(CookingData& data)
 {
     data.StepProgress(TEXT("Deploying engine data"), 0);
     const String depsRoot = data.GetPlatformBinariesRoot();
+    const auto gameSettings = GameSettings::Get();
 
     // Setup output folders and copy required data
     const auto contentDir = data.OutputPath / TEXT("Content");
@@ -73,8 +74,9 @@ bool DeployDataStep::Perform(CookingData& data)
     data.AddRootEngineAsset(TEXT("Shaders/SSR"));
     data.AddRootEngineAsset(TEXT("Shaders/VolumetricFog"));
     data.AddRootEngineAsset(TEXT("Engine/DefaultMaterial"));
+    data.AddRootEngineAsset(TEXT("Engine/DefaultDeformableMaterial"));
     data.AddRootEngineAsset(TEXT("Engine/DefaultTerrainMaterial"));
-    if (!GameSettings::NoSplashScreen && !GameSettings::SplashScreen.IsValid())
+    if (!gameSettings->NoSplashScreen && !gameSettings->SplashScreen.IsValid())
         data.AddRootEngineAsset(TEXT("Engine/Textures/Logo"));
     data.AddRootEngineAsset(TEXT("Engine/Textures/NormalTexture"));
     data.AddRootEngineAsset(TEXT("Engine/Textures/BlackTexture"));
@@ -95,10 +97,12 @@ bool DeployDataStep::Perform(CookingData& data)
     data.AddRootEngineAsset(PRE_INTEGRATED_GF_ASSET_NAME);
     data.AddRootEngineAsset(SMAA_AREA_TEX);
     data.AddRootEngineAsset(SMAA_SEARCH_TEX);
+    if (data.Configuration != BuildConfiguration::Release)
+        data.AddRootEngineAsset(TEXT("Editor/Fonts/Roboto-Regular"));
 
     // Register game assets
     data.StepProgress(TEXT("Deploying game data"), 50);
-    auto& buildSettings = *BuildSettings::Instance();
+    auto& buildSettings = *BuildSettings::Get();
     for (auto& e : buildSettings.AdditionalAssets)
         data.AddRootAsset(e.GetID());
     Array<String> files;

@@ -316,6 +316,20 @@ public:
     /// <param name="ptr">A pointer to the memory block to deallocate.</param>
     static void Free(void* ptr) = delete;
 
+    /// <summary>
+    /// Allocates pages memory block.
+    /// </summary>
+    /// <param name="numPages">The number of pages to allocate.</param>
+    /// <param name="pageSize">The size of single page. Use Platform::GetCPUInfo().PageSize or provide compatible, custom size.</param>
+    /// <returns>The pointer to the allocated pages in memory.</returns>
+    static void* AllocatePages(uint64 numPages, uint64 pageSize) = delete;
+
+    /// <summary>
+    /// Frees allocated pages memory block.
+    /// </summary>
+    /// <param name="ptr">The pointer to the pages to deallocate.</param>
+    static void FreePages(void* ptr) = delete;
+
 public:
 
     /// <summary>
@@ -555,17 +569,17 @@ public:
     API_PROPERTY() static BatteryInfo GetBatteryInfo();
 
     /// <summary>
-    /// Gets the screen DPI setting.
+    /// Gets the primary monitor's DPI setting.
     /// </summary>
     API_PROPERTY() static int32 GetDpi();
 
     /// <summary>
-    /// Gets the screen DPI setting scale factor (1 is default). Includes custom DPI scale.
+    /// Gets the primary monitor's DPI setting scale factor (1 is default). Includes custom DPI scale.
     /// </summary>
     API_PROPERTY() static float GetDpiScale();
 
     /// <summary>
-    /// The custom screen DPI scale factor to apply globally. Can be used to adjust the User Interface scale (resolution).
+    /// The custom DPI scale factor to apply globally. Can be used to adjust the User Interface scale (resolution).
     /// </summary>
     API_FIELD() static float CustomDpiScale;
 
@@ -790,7 +804,16 @@ public:
     /// <param name="maxDepth">The maximum depth of the stack to collect. Can be used to prevent too long stack traces in case of stack overflow exception.</param>
     /// <param name="context">The platform-dependent context for the stack trace collecting (eg. platform exception info).</param>
     /// <returns>The collected stack trace frames. Empty if not supported (eg. platform not implements this feature or not supported in the distributed build).</returns>
-    static Array<StackFrame, HeapAllocation> GetStackTrace(int32 skipCount = 0, int32 maxDepth = 60, void* context = nullptr);
+    static Array<StackFrame, HeapAllocation> GetStackFrames(int32 skipCount = 0, int32 maxDepth = 60, void* context = nullptr);
+
+    /// <summary>
+    /// Gets current native stack trace information as string.
+    /// </summary>
+    /// <param name="skipCount">The amount of stack frames to skip from the beginning. Can be used to skip the callee function from the trace (eg. in crash handler).</param>
+    /// <param name="maxDepth">The maximum depth of the stack to collect. Can be used to prevent too long stack traces in case of stack overflow exception.</param>
+    /// <param name="context">The platform-dependent context for the stack trace collecting (eg. platform exception info).</param>
+    /// <returns>The collected stack trace printed into string. Empty if not supported (eg. platform not implements this feature or not supported in the distributed build).</returns>
+    static String GetStackTrace(int32 skipCount = 0, int32 maxDepth = 60, void* context = nullptr);
 
     // Crash dump data handling
     static void CollectCrashData(const String& crashDataFolder, void* context = nullptr);

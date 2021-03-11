@@ -72,18 +72,18 @@ namespace Flax.Build.Platforms
         /// <param name="platform">The platform.</param>
         /// <param name="architecture">The target architecture.</param>
         /// <param name="toolchainRoots">The root folder for the toolchains installation.</param>
-        /// <param name="useSystemCompiler">True if use system compiler instead of toolchain.</param>
+        /// <param name="systemCompiler">The system compiler to use. Null if use toolset root.</param>
         /// <param name="toolchainSubDir">The custom toolchain folder location in <paramref name="toolchainRoots"/> directory. If nul the architecture name will be sued.</param>
-        protected UnixToolchain(UnixPlatform platform, TargetArchitecture architecture, string toolchainRoots, bool useSystemCompiler, string toolchainSubDir = null)
+        protected UnixToolchain(UnixPlatform platform, TargetArchitecture architecture, string toolchainRoots, string systemCompiler, string toolchainSubDir = null)
         : base(platform, architecture)
         {
             ArchitectureName = GetToolchainName(platform.Target, architecture);
 
             // Build paths
-            if (useSystemCompiler)
+            if (systemCompiler != null)
             {
                 ToolsetRoot = toolchainRoots;
-                ClangPath = UnixPlatform.Which("clang++-7");
+                ClangPath = UnixPlatform.Which(systemCompiler);
                 ArPath = UnixPlatform.Which("ar");
                 LlvmArPath = UnixPlatform.Which("llvm-ar");
                 RanlibPath = UnixPlatform.Which("ranlib");
@@ -196,9 +196,16 @@ namespace Flax.Build.Platforms
         }
 
         /// <inheritdoc />
+        public override string DllExport => "__attribute__((__visibility__(\\\"default\\\")))";
+
+        /// <inheritdoc />
+        public override string DllImport => "";
+
+        /// <inheritdoc />
         public override void LogInfo()
         {
-            Log.Info("Toolset root: " + ToolsetRoot);
+            if (!string.IsNullOrEmpty(ToolsetRoot))
+                Log.Info("Toolset root: " + ToolsetRoot);
             Log.Info("Clang version: " + ClangVersion);
         }
 
@@ -254,12 +261,8 @@ namespace Flax.Build.Platforms
             var commonArgs = new List<string>();
             SetupCompileCppFilesArgs(graph, options, commonArgs, outputPath);
             {
-                // Don't link, only compile code
                 commonArgs.Add("-c");
-
                 commonArgs.Add("-pipe");
-
-                // C++ compile flags
                 commonArgs.Add("-x");
                 commonArgs.Add("c++");
                 commonArgs.Add("-std=c++14");
@@ -278,25 +281,6 @@ namespace Flax.Build.Platforms
 
                 if (compileEnvironment.TreatWarningsAsErrors)
                     commonArgs.Add("-Wall -Werror");
-
-                /*
-                if (ShouldUseLibcxx(CompileEnvironment.Architecture))
-                {
-                    commonArgs.Add("-nostdinc++");
-                    commonArgs.Add("-I" + "ThirdParty/Linux/LibCxx/include/");
-                    commonArgs.Add("-I" + "ThirdParty/Linux/LibCxx/include/c++/v1");
-                }
-                 */
-                /*
-               if (Options.HasFlag(LinuxToolChainOptions.EnableAddressSanitizer))
-                   commonArgs.Add("-fsanitize=address");
-
-               if (Options.HasFlag(LinuxToolChainOptions.EnableThreadSanitizer))
-                   commonArgs.Add("-fsanitize=thread");
-
-               if (Options.HasFlag(LinuxToolChainOptions.EnableUndefinedBehaviorSanitizer))
-                   commonArgs.Add("-fsanitize=undefined");
-               */
 
                 // TODO: compileEnvironment.IntrinsicFunctions
                 // TODO: compileEnvironment.FunctionLevelLinking
@@ -449,7 +433,6 @@ namespace Flax.Build.Platforms
             var args = new List<string>();
             {
                 args.Add(string.Format("-o \"{0}\"", outputFilePath));
-                //args.Add(string.Format("-rpath-link=\"{0}\"", Path.GetDirectoryName(outputFilePath).Replace('\\', '/')));
 
                 if (!options.LinkEnv.DebugInformation)
                 {
@@ -469,12 +452,18 @@ namespace Flax.Build.Platforms
             foreach (var library in linkEnvironment.InputLibraries)
             {
                 var dir = Path.GetDirectoryName(library);
+                var ext = Path.GetExtension(library);
                 if (string.IsNullOrEmpty(dir))
                 {
                     args.Add(string.Format("\"-l{0}\"", library));
                 }
-                else if (library.EndsWith(".so"))
+                else if (string.IsNullOrEmpty(ext))
                 {
+                    // Skip executable
+                }
+                else if (ext == ".so")
+                {
+                    // Link against dynamic library
                     task.PrerequisiteFiles.Add(library);
                     libraryPaths.Add(dir);
                     args.Add(string.Format("\"-l{0}\"", GetLibName(library)));
@@ -488,12 +477,18 @@ namespace Flax.Build.Platforms
             foreach (var library in options.Libraries)
             {
                 var dir = Path.GetDirectoryName(library);
+                var ext = Path.GetExtension(library);
                 if (string.IsNullOrEmpty(dir))
                 {
                     args.Add(string.Format("\"-l{0}\"", library));
                 }
-                else if (library.EndsWith(".so"))
+                else if (string.IsNullOrEmpty(ext))
                 {
+                    // Skip executable
+                }
+                else if (ext == ".so")
+                {
+                    // Link against dynamic library
                     task.PrerequisiteFiles.Add(library);
                     libraryPaths.Add(dir);
                     args.Add(string.Format("\"-l{0}\"", GetLibName(library)));

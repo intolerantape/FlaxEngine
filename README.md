@@ -34,11 +34,11 @@ Flax Visual Studio extension provides better programming workflow, C# scripts de
 
 * Install Visual Studio 2015 or newer
 * Install Windows 8.1 SDK or newer
-* Install Microsoft Visual C++ 2015.3 v140 toolset for desktop (x86, x64)
+* Install Microsoft Visual C++ 2015 v140 toolset or newer
 * Clone repo (with LFS)
 * Run **GenerateProjectFiles.bat**
 * Open `Flax.sln` and set solution configuration to **Editor.Development** and solution platform to **Win64**
-* Set Flax or FlaxEngine as startup project
+* Set Flax (C++) or FlaxEngine (C#) as startup project
 * Compile Flax project (hit F7 or CTRL+Shift+B)
 * Run Flax (hit F5 key)
 
@@ -47,12 +47,12 @@ Flax Visual Studio extension provides better programming workflow, C# scripts de
 * Install Visual Studio Code
 * Install Mono ([https://www.mono-project.com/download/stable](https://www.mono-project.com/download/stable))
 * Install Git with LFS
-* Install requried packages: `sudo apt-get install nuget autoconf libtool libogg-dev automake build-essential gettext cmake python curl libtool-bin libx11-dev libpulse-dev libasound2-dev libjack-dev portaudio19-dev`
-* Install compiler `sudo apt-get install clang-7 lldb-7 lld-7`
+* Install requried packages: `sudo apt-get install nuget autoconf libtool libogg-dev automake build-essential gettext cmake python curl libtool-bin libx11-dev libpulse-dev libasound2-dev libjack-dev portaudio19-dev libcurl4-gnutls-dev`
+* Install compiler `sudo apt-get install clang lldb lld` (Clang 6 or newer)
 * Clone repo (with LFS)
-* Run `sudo bash GenerateProjectFiles.sh`
+* Run `./GenerateProjectFiles.sh`
 * Open workspace with Visual Code
-* Build and run
+* Build and run (configuration and task named `Flax|Editor.Linux.Development|x64`)
 
 ## Workspace directory
 

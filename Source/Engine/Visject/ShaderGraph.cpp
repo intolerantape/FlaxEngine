@@ -535,6 +535,12 @@ void ShaderGenerator::ProcessGroupPacking(Box* box, Node* node, Value& value)
         value = Value(ValueType::Vector2, v.Value + TEXT(".yz"));
         break;
     }
+    case 47:
+    {
+        Value v = tryGetValue(node->GetBox(0), Vector4::Zero).AsVector4();
+        value = Value(ValueType::Vector2, v.Value + TEXT(".zw"));
+        break;
+    }
         // Mask XYZ
     case 70:
     {
@@ -762,6 +768,11 @@ void ShaderGenerator::ProcessGroupTools(Box* box, Node* node, Value& value)
         PLATFORM_CASE(7, "PLATFORM_XBOX_SCARLETT");
         PLATFORM_CASE(8, "PLATFORM_ANDROID");
 #undef PLATFORM_CASE
+        break;
+    }
+    case 29:
+    {
+        value = tryGetValue(node->GetBox(0), Value::Zero);
         break;
     }
     default:

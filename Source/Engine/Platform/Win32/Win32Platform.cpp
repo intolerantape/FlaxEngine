@@ -5,12 +5,12 @@
 #include "Engine/Platform/Platform.h"
 #include "Engine/Platform/MemoryStats.h"
 #include "Engine/Platform/CPUInfo.h"
-#include "Engine/Platform/BatteryInfo.h"
 #include "Engine/Core/Types/Guid.h"
 #include "Engine/Core/Types/String.h"
 #include "Engine/Core/Math/Math.h"
-#include "IncludeWindowsHeaders.h"
 #include "Engine/Core/Collections/HashFunctions.h"
+#include "Engine/Core/Log.h"
+#include "IncludeWindowsHeaders.h"
 #include <Psapi.h>
 #include <WinSock2.h>
 #include <IPHlpApi.h>
@@ -25,6 +25,7 @@ namespace
     CPUInfo CpuInfo;
     uint64 ClockFrequency;
     double CyclesToSeconds;
+    WSAData WsaData;
 }
 
 // Helper function to count set bits in the processor mask
@@ -44,6 +45,18 @@ DWORD CountSetBits(ULONG_PTR bitMask)
     return bitSetCount;
 }
 
+static String GetLastErrorMessage()
+{
+    wchar_t* s = nullptr;
+    FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                   nullptr, WSAGetLastError(),
+                   MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                   reinterpret_cast<LPWSTR>(&s), 0, nullptr);
+    String str(s);
+    LocalFree(s);
+    return str;
+}
+
 bool Win32Platform::Init()
 {
     if (PlatformBase::Init())
@@ -56,6 +69,7 @@ bool Win32Platform::Init()
     ClockFrequency = frequency.QuadPart;
     CyclesToSeconds = 1.0 / static_cast<double>(frequency.QuadPart);
 
+    // Count CPUs
     BOOL done = FALSE;
     PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer = nullptr;
     PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr;
@@ -68,12 +82,10 @@ bool Win32Platform::Init()
     DWORD processorPackageCount = 0;
     DWORD byteOffset = 0;
     PCACHE_DESCRIPTOR cache;
-
     while (!done)
     {
         DWORD rc = GetLogicalProcessorInformation(buffer, &returnLength);
-
-        if (FALSE == rc)
+        if (rc == FALSE)
         {
             if (GetLastError() == ERROR_INSUFFICIENT_BUFFER)
             {
@@ -81,9 +93,7 @@ bool Win32Platform::Init()
                 {
                     free(buffer);
                 }
-
                 buffer = static_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION>(malloc(returnLength));
-
                 if (buffer == nullptr)
                 {
                     return true;
@@ -99,23 +109,16 @@ bool Win32Platform::Init()
             done = TRUE;
         }
     }
-
     ptr = buffer;
-
     while (byteOffset + sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION) <= returnLength)
     {
         switch (ptr->Relationship)
         {
         case RelationProcessorCore:
-
             processorCoreCount++;
-
-            // A hyper threaded core supplies more than one logical processor
             logicalProcessorCount += CountSetBits(ptr->ProcessorMask);
             break;
-
         case RelationCache:
-            // Cache data is in ptr->Cache, one CACHE_DESCRIPTOR structure for each cache.
             cache = &ptr->Cache;
             if (cache->Level == 1)
             {
@@ -130,9 +133,7 @@ bool Win32Platform::Init()
                 processorL3CacheSize += cache->Size;
             }
             break;
-
         case RelationProcessorPackage:
-            // Logical processors share a physical package
             processorPackageCount++;
             break;
         }
@@ -212,24 +213,22 @@ bool Win32Platform::Init()
         DeviceId.D = (uint32)cpuInfo.ClockSpeed * cpuInfo.LogicalProcessorCount * cpuInfo.ProcessorCoreCount * cpuInfo.CacheLineSize;
     }
 
+    // Init networking
+    if (WSAStartup(MAKEWORD(2, 0), &WsaData) != 0)
+        LOG(Error, "Unable to initializes native network! Error : {0}", GetLastErrorMessage());
+
     return false;
+}
+
+void Win32Platform::Exit()
+{
+    WSACleanup();
 }
 
 void Win32Platform::MemoryBarrier()
 {
-    // NOTE: _ReadWriteBarrier and friends only prevent the
-    // compiler from reordering loads and stores. To prevent
-    // the CPU from doing the same, we have to use the
-    // MemoryBarrier macro which expands to e.g. a serializing
-    // XCHG instruction on x86. Also note that the MemoryBarrier
-    // macro does *not* imply _ReadWriteBarrier, so that call
-    // cannot be eliminated.
-
     _ReadWriteBarrier();
-
-    // MemoryBarrier macro (we use undef to hide some symbols from Windows headers)
 #if PLATFORM_64BITS
-
 #ifdef _AMD64_
     __faststorefence();
 #elif defined(_IA64_)
@@ -237,7 +236,6 @@ void Win32Platform::MemoryBarrier()
 #else
 #error "Invalid platform."
 #endif
-
 #else
 	LONG barrier;
 	__asm {
@@ -317,6 +315,20 @@ void Win32Platform::Free(void* ptr)
     _aligned_free(ptr);
 }
 
+void* Win32Platform::AllocatePages(uint64 numPages, uint64 pageSize)
+{
+    const uint64 numBytes = numPages * pageSize;
+
+    // Use VirtualAlloc to allocate page-aligned memory
+    return VirtualAlloc(nullptr, numBytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+}
+
+void Win32Platform::FreePages(void* ptr)
+{
+    // Free page-aligned memory
+    VirtualFree(ptr, 0, MEM_RELEASE);
+}
+
 bool Win32Platform::Is64BitPlatform()
 {
 #ifdef PLATFORM_64BITS
@@ -326,21 +338,6 @@ bool Win32Platform::Is64BitPlatform()
 	IsWow64Process(GetCurrentProcess(), &result);
 	return result == TRUE;
 #endif
-}
-
-BatteryInfo Win32Platform::GetBatteryInfo()
-{
-    BatteryInfo info;
-    SYSTEM_POWER_STATUS status;
-    GetSystemPowerStatus(&status);
-    info.BatteryLifePercent = (float)status.BatteryLifePercent / 255.0f;
-    if (status.BatteryFlag & 8)
-        info.State = BatteryInfo::States::BatteryCharging;
-    else if (status.BatteryFlag & 1 || status.BatteryFlag & 2 || status.BatteryFlag & 4)
-        info.State = BatteryInfo::States::BatteryDischarging;
-    else if (status.ACLineStatus == 1 || status.BatteryFlag & 128)
-        info.State = BatteryInfo::States::Connected;
-    return info;
 }
 
 CPUInfo Win32Platform::GetCPUInfo()

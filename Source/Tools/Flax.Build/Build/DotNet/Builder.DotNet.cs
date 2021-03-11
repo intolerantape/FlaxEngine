@@ -23,6 +23,8 @@ namespace Flax.Build
             var buildOptions = buildData.TargetOptions;
             foreach (var binaryModule in buildData.BinaryModules)
             {
+                if (binaryModule.All(x => !x.BuildCSharp))
+                    continue;
                 var binaryModuleName = binaryModule.Key;
                 using (new ProfileEventScope(binaryModuleName))
                 {
@@ -44,9 +46,20 @@ namespace Flax.Build
                     var outputPath = Path.GetDirectoryName(buildData.Target.GetOutputFilePath(buildOptions));
                     var outputFile = Path.Combine(outputPath, binaryModuleName + ".CSharp.dll");
                     var outputDocFile = Path.Combine(outputPath, binaryModuleName + ".CSharp.xml");
-                    var monoRoot = Path.Combine(Globals.EngineRoot, "Source", "Platforms", "Editor", "Windows", "Mono");
+                    string monoRoot, exePath;
+                    switch (buildPlatform)
+                    {
+                    case TargetPlatform.Windows:
+                        monoRoot = Path.Combine(Globals.EngineRoot, "Source", "Platforms", "Editor", "Windows", "Mono");
+                        exePath = Path.Combine(monoRoot, "bin", "mono.exe");
+                        break;
+                    case TargetPlatform.Linux:
+                        monoRoot = Path.Combine(Globals.EngineRoot, "Source", "Platforms", "Editor", "Linux", "Mono");
+                        exePath = Path.Combine(monoRoot, "bin", "mono");
+                        break;
+                    default: throw new InvalidPlatformException(buildPlatform);
+                    }
                     var cscPath = Path.Combine(monoRoot, "lib", "mono", "4.5", "csc.exe");
-                    var exePath = buildPlatform == TargetPlatform.Windows ? Path.Combine(monoRoot, "bin", "mono.exe") : "mono";
                     var referenceAssemblies = Path.Combine(monoRoot, "lib", "mono", "4.5-api");
                     var references = new HashSet<string>(buildOptions.ScriptingAPI.FileReferences);
                     foreach (var module in binaryModule)
@@ -60,6 +73,7 @@ namespace Flax.Build
                             var dependencyModule = buildData.Rules.GetModule(dependencyName);
                             if (dependencyModule != null &&
                                 !string.IsNullOrEmpty(dependencyModule.BinaryModuleName) &&
+                                dependencyModule.BuildCSharp &&
                                 dependencyModule.BinaryModuleName != binaryModuleName &&
                                 buildData.Modules.TryGetValue(dependencyModule, out var dependencyModuleOptions))
                             {
@@ -135,7 +149,7 @@ namespace Flax.Build
                     task.WorkingDirectory = workspaceRoot;
                     task.CommandPath = exePath;
                     task.CommandArguments = $"\"{cscPath}\" /noconfig @\"{responseFile}\"";
-                    task.InfoMessage = "Compiling C# API for " + binaryModuleName;
+                    task.InfoMessage = "Compiling " + outputFile;
                     task.Cost = task.PrerequisiteFiles.Count;
 
                     // Copy referenced assemblies

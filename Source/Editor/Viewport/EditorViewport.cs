@@ -1165,7 +1165,7 @@ namespace FlaxEditor.Viewport
                     UpdateView(dt, ref moveDelta, ref mouseDelta, out _);
                 }
             }
-            if (_input.IsMouseLeftDown)
+            if (_input.IsMouseLeftDown && false)
             {
                 // Calculate smooth mouse delta not dependant on viewport size
                 Vector2 offset = _viewMousePos - _startPos;
@@ -1276,10 +1276,10 @@ namespace FlaxEditor.Viewport
         {
             new CameraOrientation("Front", new Vector3(0, 0, 0)),
             new CameraOrientation("Back", new Vector3(0, 180, 0)),
-            new CameraOrientation("Left", new Vector3(0, 90, 0)),
-            new CameraOrientation("Right", new Vector3(0, -90, 0)),
-            new CameraOrientation("Top", new Vector3(-90, 0, 0)),
-            new CameraOrientation("Bottom", new Vector3(90, 0, 0))
+            new CameraOrientation("Left", new Vector3(0, -90, 0)),
+            new CameraOrientation("Right", new Vector3(0, 90, 0)),
+            new CameraOrientation("Top", new Vector3(90, 0, 0)),
+            new CameraOrientation("Bottom", new Vector3(-90, 0, 0))
         };
 
         private readonly float[] EditorViewportCameraSpeedValues =

@@ -715,7 +715,7 @@ namespace FlaxEngine
         }
 
         /// <summary>
-        /// Converts the color to HSV color space (returned as vector).
+        /// Gets Hue[0-360], Saturation[0-1] and Value[0-1] from RGB color.
         /// </summary>
         /// <returns>The HSV color.</returns>
         public Vector3 ToHSV()
@@ -787,7 +787,7 @@ namespace FlaxEngine
             }
         }
 
-        /// <summary>
+        /// <summary>1
         /// Adjusts the contrast of a color.
         /// </summary>
         /// <param name="value">The color whose contrast is to be adjusted.</param>

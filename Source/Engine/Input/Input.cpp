@@ -98,6 +98,12 @@ Delegate<StringView> Input::ActionTriggered;
 Array<ActionConfig> Input::ActionMappings;
 Array<AxisConfig> Input::AxisMappings;
 
+void InputSettings::Apply()
+{
+    Input::ActionMappings = ActionMappings;
+    Input::AxisMappings = AxisMappings;
+}
+
 void Mouse::OnMouseMoved(const Vector2& newPosition)
 {
     _prevState.MousePosition = newPosition;
@@ -593,7 +599,7 @@ void InputService::Update()
     for (const auto& e : InputEvents)
     {
         auto window = e.Target ? e.Target : defaultWindow;
-        if (!window)
+        if (!window || !WindowsManager::Windows.Contains(window))
             continue;
         switch (e.Type)
         {

@@ -1,6 +1,5 @@
 // Copyright (c) 2012-2021 Wojciech Figat. All rights reserved.
 
-using System;
 using System.Collections;
 using System.Collections.Generic;
 using FlaxEngine;
@@ -40,30 +39,35 @@ namespace FlaxEditor.CustomEditors.Editors
                 // Allocate new list
                 var listType = Values.Type;
                 var newValues = (IList)listType.CreateInstance();
+                var elementType = ElementType;
 
                 var sharedCount = Mathf.Min(oldSize, newSize);
                 if (list != null && sharedCount > 0)
                 {
                     // Copy old values
                     for (int i = 0; i < sharedCount; i++)
-                    {
                         newValues.Add(list[i]);
-                    }
 
-                    // Fill new entries with the last value
-                    for (int i = oldSize; i < newSize; i++)
+                    if (elementType.IsValueType)
                     {
-                        newValues.Add(list[oldSize - 1]);
+                        // Fill new entries with the last value
+                        for (int i = oldSize; i < newSize; i++)
+                            newValues.Add(list[oldSize - 1]);
+                    }
+                    else
+                    {
+                        // Initialize new entries with default values
+                        var defaultValue = Scripting.TypeUtils.GetDefaultValue(elementType);
+                        for (int i = oldSize; i < newSize; i++)
+                            newValues.Add(defaultValue);
                     }
                 }
                 else if (newSize > 0)
                 {
-                    // Fill new entries
-                    var defaultValue = Scripting.TypeUtils.GetDefaultValue(ElementType);
+                    // Fill new entries with default value
+                    var defaultValue = Scripting.TypeUtils.GetDefaultValue(elementType);
                     for (int i = oldSize; i < newSize; i++)
-                    {
                         newValues.Add(defaultValue);
-                    }
                 }
 
                 SetValue(newValues);

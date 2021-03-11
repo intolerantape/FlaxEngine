@@ -4,7 +4,7 @@
 
 #include "MaterialGenerator.h"
 
-MaterialValue MaterialGenerator::AccessParticleAttribute(Node* caller, const StringView& name, ParticleAttributeValueTypes valueType, const Char* index)
+MaterialValue MaterialGenerator::AccessParticleAttribute(Node* caller, const StringView& name, ParticleAttributeValueTypes valueType, const Char* index, ParticleAttributeSpace space)
 {
     // TODO: cache the attribute value during material tree execution (eg. reuse the same Particle Color read for many nodes in graph)
 
@@ -69,13 +69,29 @@ MaterialValue MaterialGenerator::AccessParticleAttribute(Node* caller, const Str
     default:
         return MaterialValue::Zero;
     }
-    return writeLocal(type, String::Format(format, attributeMapping->ShaderName, index ? index : TEXT("input.ParticleIndex")), caller);
+    auto result = writeLocal(type, String::Format(format, attributeMapping->ShaderName, index ? index : TEXT("input.ParticleIndex")), caller);
+
+    // Apply transformation to world-space
+    switch (space)
+    {
+    case ParticleAttributeSpace::AsIs:
+        break;
+    case ParticleAttributeSpace::LocalPosition:
+        _writer.Write(TEXT("\t{0} = TransformParticlePosition({0});\n"), result.Value);
+        break;
+    case ParticleAttributeSpace::LocalDirection:
+        _writer.Write(TEXT("\t{0} = TransformParticleVector({0});\n"), result.Value);
+        break;
+    default: ;
+    }
+
+    return result;
 }
 
 void MaterialGenerator::ProcessGroupParticles(Box* box, Node* node, Value& value)
 {
     // Only particle shaders can access particles data
-    if (GetRootLayer()->Domain != MaterialDomain::Particle)
+    if (GetRootLayer()->Domain != MaterialDomain::Particle && GetRootLayer()->Domain != MaterialDomain::VolumeParticle)
     {
         value = MaterialValue::Zero;
         return;
@@ -99,7 +115,7 @@ void MaterialGenerator::ProcessGroupParticles(Box* box, Node* node, Value& value
         // Particle Position
     case 101:
     {
-        value = AccessParticleAttribute(node, TEXT("Position"), ParticleAttributeValueTypes::Vector3);
+        value = AccessParticleAttribute(node, TEXT("Position"), ParticleAttributeValueTypes::Vector3, nullptr, ParticleAttributeSpace::LocalPosition);
         break;
     }
         // Particle Lifetime
@@ -123,7 +139,7 @@ void MaterialGenerator::ProcessGroupParticles(Box* box, Node* node, Value& value
         // Particle Velocity
     case 105:
     {
-        value = AccessParticleAttribute(node, TEXT("Velocity"), ParticleAttributeValueTypes::Vector3);
+        value = AccessParticleAttribute(node, TEXT("Velocity"), ParticleAttributeValueTypes::Vector3, nullptr, ParticleAttributeSpace::LocalDirection);
         break;
     }
         // Particle Sprite Size
@@ -156,6 +172,12 @@ void MaterialGenerator::ProcessGroupParticles(Box* box, Node* node, Value& value
         const auto age = AccessParticleAttribute(node, TEXT("Age"), ParticleAttributeValueTypes::Float);
         const auto lifetime = AccessParticleAttribute(node, TEXT("Lifetime"), ParticleAttributeValueTypes::Float);
         value = writeOperation2(node, age, lifetime, '/');
+        break;
+    }
+        // Particle Radius
+    case 111:
+    {
+        value = AccessParticleAttribute(node, TEXT("Radius"), ParticleAttributeValueTypes::Float);
         break;
     }
     default:

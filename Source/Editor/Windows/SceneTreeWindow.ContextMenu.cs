@@ -57,6 +57,30 @@ namespace FlaxEditor.Windows
             b = contextMenu.AddButton("Duplicate", Editor.SceneEditing.Duplicate);
             b.Enabled = hasSthSelected;
 
+            if (Editor.SceneEditing.SelectionCount == 1)
+            {
+                var convertMenu = contextMenu.AddChildMenu("Convert");
+                var convertActorCm = convertMenu.ContextMenu;
+                for (int i = 0; i < SpawnActorsGroups.Length; i++)
+                {
+                    var group = SpawnActorsGroups[i];
+
+                    if (group.Types.Length == 1)
+                    {
+                        var type = group.Types[0].Value;
+                        convertActorCm.AddButton(group.Types[0].Key, () => Editor.SceneEditing.Convert(type));
+                    }
+                    else
+                    {
+                        var groupCm = convertActorCm.AddChildMenu(group.Name).ContextMenu;
+                        for (int j = 0; j < group.Types.Length; j++)
+                        {
+                            var type = group.Types[j].Value;
+                            groupCm.AddButton(group.Types[j].Key, () => Editor.SceneEditing.Convert(type));
+                        }
+                    }
+                }
+            }
             b = contextMenu.AddButton("Delete", Editor.SceneEditing.Delete);
             b.Enabled = hasSthSelected;
 
@@ -114,6 +138,24 @@ namespace FlaxEditor.Windows
             }
 
             // Custom options
+
+            bool showCustomNodeOptions = Editor.SceneEditing.Selection.Count == 1;
+            if (!showCustomNodeOptions && Editor.SceneEditing.Selection.Count != 0)
+            {
+                showCustomNodeOptions = true;
+                for (int i = 1; i < Editor.SceneEditing.Selection.Count; i++)
+                {
+                    if (Editor.SceneEditing.Selection[0].GetType() != Editor.SceneEditing.Selection[i].GetType())
+                    {
+                        showCustomNodeOptions = false;
+                        break;
+                    }
+                }
+            }
+            if (showCustomNodeOptions)
+            {
+                Editor.SceneEditing.Selection[0].OnContextMenu(contextMenu);
+            }
 
             ContextMenuShow?.Invoke(contextMenu);
 

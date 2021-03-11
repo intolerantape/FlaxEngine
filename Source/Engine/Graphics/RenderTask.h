@@ -236,10 +236,7 @@ public:
     /// <summary>
     /// Marks the next rendered frame as camera cut. Used to clear the temporal effects history and prevent visual artifacts blended from the previous frames.
     /// </summary>
-    API_FUNCTION() void CameraCut()
-    {
-        IsCameraCut = true;
-    }
+    API_FUNCTION() void CameraCut();
 
     /// <summary>
     /// The output texture (can be null if using rendering to window swap chain). Can be sued to redirect the default scene rendering output to a texture.
@@ -275,19 +272,18 @@ public:
     /// Adds the custom actor to the rendering.
     /// </summary>
     /// <param name="actor">The actor.</param>
-    API_FUNCTION() void AddCustomActor(Actor* actor)
-    {
-        CustomActors.Add(actor);
-    }
+    API_FUNCTION() void AddCustomActor(Actor* actor);
 
     /// <summary>
     /// Removes the custom actor from the rendering.
     /// </summary>
     /// <param name="actor">The actor.</param>
-    API_FUNCTION() void RemoveCustomActor(Actor* actor)
-    {
-        CustomActors.Remove(actor);
-    }
+    API_FUNCTION() void RemoveCustomActor(Actor* actor);
+
+    /// <summary>
+    /// Removes all the custom actors from the rendering.
+    /// </summary>
+    API_FUNCTION() void ClearCustomActors();
 
     /// <summary>
     /// The custom post fx to render (managed).

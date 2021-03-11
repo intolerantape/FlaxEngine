@@ -242,8 +242,6 @@ namespace FlaxEditor
             StateMachine = new EditorStateMachine(this);
             Undo = new EditorUndo(this);
 
-            ScriptsBuilder.ScriptsReloadBegin += ScriptsBuilder_ScriptsReloadBegin;
-            ScriptsBuilder.ScriptsReloadEnd += ScriptsBuilder_ScriptsReloadEnd;
             UIControl.FallbackParentGetDelegate += OnUIControlFallbackParentGet;
         }
 
@@ -258,18 +256,6 @@ namespace FlaxEditor
                 return loadingPreview;
             }
             return null;
-        }
-
-        private void ScriptsBuilder_ScriptsReloadBegin()
-        {
-            EnsureState<EditingSceneState>();
-            StateMachine.GoToState<ReloadingScriptsState>();
-        }
-
-        private void ScriptsBuilder_ScriptsReloadEnd()
-        {
-            EnsureState<ReloadingScriptsState>();
-            StateMachine.GoToState<EditingSceneState>();
         }
 
         internal void RegisterModule(EditorModule module)
@@ -496,9 +482,6 @@ namespace FlaxEditor
             Undo.Dispose();
             Surface.VisualScriptSurface.NodesCache.Clear();
             Instance = null;
-
-            ScriptsBuilder.ScriptsReloadBegin -= ScriptsBuilder_ScriptsReloadBegin;
-            ScriptsBuilder.ScriptsReloadEnd -= ScriptsBuilder_ScriptsReloadEnd;
 
             // Invoke new instance if need to open a project
             if (!string.IsNullOrEmpty(_projectToOpen))
@@ -1198,7 +1181,7 @@ namespace FlaxEditor
                 var win = Windows.GameWin.Root;
                 if (win != null && win.RootWindow is WindowRootControl root && root.Window.IsFocused)
                 {
-                    pos = Vector2.Round(Windows.GameWin.Viewport.PointFromWindow(root.Window.ScreenToClient(pos)));
+                    pos = Vector2.Round(Windows.GameWin.Viewport.PointFromScreen(pos) * root.DpiScale);
                 }
                 else
                 {
@@ -1218,7 +1201,7 @@ namespace FlaxEditor
                 var win = Windows.GameWin.Root;
                 if (win != null && win.RootWindow is WindowRootControl root && root.Window.IsFocused)
                 {
-                    pos = Vector2.Round(root.Window.ClientToScreen(Windows.GameWin.Viewport.PointToWindow(pos)));
+                    pos = Vector2.Round(Windows.GameWin.Viewport.PointToScreen(pos / root.DpiScale));
                 }
                 else
                 {
@@ -1248,13 +1231,18 @@ namespace FlaxEditor
             var gameWin = Windows.GameWin;
             if (gameWin != null)
             {
-                // Handle case when Game window is not selected in tab view
-                var dockedTo = gameWin.ParentDockPanel;
-                if (dockedTo != null && dockedTo.SelectedTab != gameWin && dockedTo.SelectedTab != null)
-                    resultAsRef = dockedTo.SelectedTab.Size;
-                else
-                    resultAsRef = gameWin.Size;
-                resultAsRef = Vector2.Round(resultAsRef);
+                var win = gameWin.Root;
+                if (win != null && win.RootWindow is WindowRootControl root)
+                {
+                    // Handle case when Game window is not selected in tab view
+                    var dockedTo = gameWin.ParentDockPanel;
+                    if (dockedTo != null && dockedTo.SelectedTab != gameWin && dockedTo.SelectedTab != null)
+                        resultAsRef = dockedTo.SelectedTab.Size * root.DpiScale;
+                    else
+                        resultAsRef = gameWin.Size * root.DpiScale;
+
+                    resultAsRef = Vector2.Round(resultAsRef);
+                }
             }
         }
 

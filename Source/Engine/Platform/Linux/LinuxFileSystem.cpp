@@ -20,6 +20,42 @@
 
 const DateTime UnixEpoch(1970, 1, 1);
 
+bool LinuxFileSystem::ShowOpenFileDialog(Window* parentWindow, const StringView& initialDirectory, const StringView& filter, bool multiSelect, const StringView& title, Array<String, HeapAllocation>& filenames)
+{
+    const StringAsANSI<> titleAnsi(*title, title.Length());
+    char cmd[2048];
+    // TODO: multiSelect support
+    // TODO: filter support
+    sprintf(cmd, "/usr/bin/zenity --modal --file-selection --title=\"%s\" ", titleAnsi.Get());
+    FILE* f = popen(cmd, "r");
+    char buf[2048];
+    fgets(buf, ARRAY_COUNT(buf), f); 
+    int result = pclose(f);
+    if (result != 0)
+    {
+        return true;
+    }
+    const char* c = buf;
+    while (*c)
+    {
+        const char* start = c;
+        while (*c != '\n')
+            c++;
+        filenames.Add(String(start, (int32)(c - start)));
+        c++;
+    }
+    return false;
+}
+
+bool LinuxFileSystem::ShowFileExplorer(const StringView& path)
+{
+    const StringAsANSI<> pathAnsi(*path, path.Length());
+    char cmd[2048];
+    sprintf(cmd, "nautilus %s &", pathAnsi.Get());
+    system(cmd);
+    return false;
+}
+
 bool LinuxFileSystem::CreateDirectory(const StringView& path)
 {
     const StringAsANSI<> pathAnsi(*path, path.Length());
@@ -81,7 +117,7 @@ bool DeleteUnixPathTree(const char* path)
 
         // Determinate a full path of an entry
         char full_path[256];
-        ASSERT(pathLength + strlen(entry->d_name) <= 255);
+        ASSERT(pathLength + strlen(entry->d_name) < ARRAY_COUNT(full_path));
         strcpy(full_path, path);
         strcat(full_path, "/");
         strcat(full_path, entry->d_name);
@@ -184,7 +220,7 @@ bool LinuxFileSystem::GetChildDirectories(Array<String>& results, const String& 
 
         // Determinate a full path of an entry
         char full_path[256];
-        ASSERT(pathLength + strlen(entry->d_name) <= 255);
+        ASSERT(pathLength + strlen(entry->d_name) < ARRAY_COUNT(full_path));
         strcpy(full_path, path);
         strcat(full_path, "/");
         strcat(full_path, entry->d_name);
@@ -282,71 +318,64 @@ bool LinuxFileSystem::CopyFile(const StringView& dst, const StringView& src)
 {
     const StringAsANSI<> srcANSI(*src, src.Length());
     const StringAsANSI<> dstANSI(*dst, dst.Length());
-    const char* from = srcANSI.Get();
-    const char* to = dstANSI.Get();
 
-    int fd_to, fd_from;
-    char buf[4096];
-    ssize_t nread;
-    int saved_errno;
+    int srcFile, dstFile;
+    char buffer[4096];
+    ssize_t readSize;
+    int cachedError;
 
-    fd_from = open(from, O_RDONLY);
-    if (fd_from < 0)
+    srcFile = open(srcANSI.Get(), O_RDONLY);
+    if (srcFile < 0)
         return true;
-
-    fd_to = open(to, O_WRONLY | O_CREAT | O_EXCL, 0666);
-    if (fd_to < 0)
+    dstFile = open(dstANSI.Get(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+    if (dstFile < 0)
         goto out_error;
 
-    while (nread = read(fd_from, buf, sizeof buf), nread > 0)
+    while (readSize = read(srcFile, buffer, sizeof(buffer)), readSize > 0)
     {
-        char* out_ptr = buf;
-        ssize_t nwritten;
+        char* ptr = buffer;
+        ssize_t writeSize;
 
         do
         {
-            nwritten = write(fd_to, out_ptr, nread);
-
-            if (nwritten >= 0)
+            writeSize = write(dstFile, ptr, readSize);
+            if (writeSize >= 0)
             {
-                nread -= nwritten;
-                out_ptr += nwritten;
+                readSize -= writeSize;
+                ptr += writeSize;
             }
             else if (errno != EINTR)
             {
                 goto out_error;
             }
-        } while (nread > 0);
+        } while (readSize > 0);
     }
 
-    if (nread == 0)
+    if (readSize == 0)
     {
-        if (close(fd_to) < 0)
+        if (close(dstFile) < 0)
         {
-            fd_to = -1;
+            dstFile = -1;
             goto out_error;
         }
-        close(fd_from);
+        close(srcFile);
 
         // Success
         return false;
     }
 
 out_error:
-    saved_errno = errno;
-
-    close(fd_from);
-    if (fd_to >= 0)
-        close(fd_to);
-
-    errno = saved_errno;
+    cachedError = errno;
+    close(srcFile);
+    if (dstFile >= 0)
+        close(dstFile);
+    errno = cachedError;
     return true;
 }
 
 bool LinuxFileSystem::getFilesFromDirectoryTop(Array<String>& results, const char* path, const char* searchPattern)
 {
     size_t pathLength;
-    DIR* dir;
     struct stat statPath, statEntry;
     struct dirent* entry;
 
@@ -361,7 +390,8 @@ bool LinuxFileSystem::getFilesFromDirectoryTop(Array<String>& results, const cha
     }
 
     // If not possible to read the directory for this user
-    if ((dir = opendir(path)) == NULL)
+    DIR* dir = opendir(path);
+    if (dir == NULL)
     {
         // Cannot open directory
         return true;
@@ -379,7 +409,7 @@ bool LinuxFileSystem::getFilesFromDirectoryTop(Array<String>& results, const cha
 
         // Determinate a full path of an entry
         char fullPath[256];
-        ASSERT(pathLength + strlen(entry->d_name) <= 255);
+        ASSERT(pathLength + strlen(entry->d_name) < ARRAY_COUNT(fullPath));
         strcpy(fullPath, path);
         strcat(fullPath, "/");
         strcat(fullPath, entry->d_name);
@@ -397,7 +427,7 @@ bool LinuxFileSystem::getFilesFromDirectoryTop(Array<String>& results, const cha
             {
                 // All files
             }
-            else if (searchPattern[0] == '*' && searchPatternLength < fullPathLength && StringUtils::Compare(fullPath + fullPathLength - searchPatternLength, searchPattern + 1) == 0)
+            else if (searchPattern[0] == '*' && searchPatternLength < fullPathLength && StringUtils::Compare(fullPath + fullPathLength - searchPatternLength + 1, searchPattern + 1, searchPatternLength - 1) == 0)
             {
                 // Path ending
             }
@@ -456,7 +486,7 @@ bool LinuxFileSystem::getFilesFromDirectoryAll(Array<String>& results, const cha
 
         // Determinate a full path of an entry
         char full_path[256];
-        ASSERT(pathLength + strlen(entry->d_name) <= 255);
+        ASSERT(pathLength + strlen(entry->d_name) < ARRAY_COUNT(full_path));
         strcpy(full_path, path);
         strcat(full_path, "/");
         strcat(full_path, entry->d_name);

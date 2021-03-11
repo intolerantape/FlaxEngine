@@ -9,6 +9,7 @@
 #include "Engine/Core/Cache.h"
 #include "Engine/Core/Collections/CollectionPoolCache.h"
 #include "Engine/Core/ObjectsRemovalService.h"
+#include "Engine/Core/Config/LayersTagsSettings.h"
 #include "Engine/Debug/Exceptions/ArgumentException.h"
 #include "Engine/Debug/Exceptions/ArgumentNullException.h"
 #include "Engine/Debug/Exceptions/InvalidOperationException.h"
@@ -35,6 +36,11 @@
 #include "Engine/Platform/MessageBox.h"
 #include "Engine/Engine/CommandLine.h"
 #endif
+
+bool LayersMask::HasLayer(const StringView& layerName) const
+{
+    return HasLayer(Level::GetLayerIndex(layerName));
+}
 
 enum class SceneEventType
 {
@@ -124,6 +130,8 @@ Delegate<Scene*, const Guid&> Level::SceneUnloaded;
 Action Level::ScriptsReloadStart;
 Action Level::ScriptsReload;
 Action Level::ScriptsReloadEnd;
+Array<String> Level::Tags;
+String Level::Layers[32];
 
 bool LevelImpl::spawnActor(Actor* actor, Actor* parent)
 {
@@ -132,15 +140,31 @@ bool LevelImpl::spawnActor(Actor* actor, Actor* parent)
         Log::ArgumentNullException(TEXT("Cannot spawn null actor."));
         return true;
     }
-    if (Level::Scenes.IsEmpty())
-    {
-        Log::InvalidOperationException(TEXT("Cannot spawn actor. No scene loaded."));
-        return true;
-    }
-    if (parent == nullptr)
-        parent = Level::Scenes[0];
 
-    actor->SetParent(parent, true, true);
+    if (actor->Is<Scene>())
+    {
+        // Spawn scene
+        actor->PostSpawn();
+        actor->OnTransformChanged();
+        {
+            SceneBeginData beginData;
+            actor->BeginPlay(&beginData);
+            beginData.OnDone();
+        }
+        CallSceneEvent(SceneEventType::OnSceneLoaded, (Scene*)actor, actor->GetID());
+    }
+    else
+    {
+        // Spawn actor
+        if (Level::Scenes.IsEmpty())
+        {
+            Log::InvalidOperationException(TEXT("Cannot spawn actor. No scene loaded."));
+            return true;
+        }
+        if (parent == nullptr)
+            parent = Level::Scenes[0];
+        actor->SetParent(parent, true, true);
+    }
 
     return false;
 }
@@ -156,6 +180,24 @@ bool LevelImpl::deleteActor(Actor* actor)
     actor->DeleteObject();
 
     return false;
+}
+
+void LayersAndTagsSettings::Apply()
+{
+    // Note: we cannot remove tags/layers at runtime so this should deserialize them in additive mode
+    // Tags/Layers are stored as index in actors so collection change would break the linkage
+    for (auto& tag : Tags)
+    {
+        if (!Level::Tags.Contains(tag))
+            Level::Tags.Add(tag);
+    }
+    for (int32 i = 0; i < ARRAY_COUNT(Level::Layers); i++)
+    {
+        const auto& src = Layers[i];
+        auto& dst = Level::Layers[i];
+        if (dst.IsEmpty() || !src.IsEmpty())
+            dst = src;
+    }
 }
 
 void LevelService::Update()
@@ -181,7 +223,7 @@ void LevelService::Update()
         for (int32 i = 0; i < scenes.Count(); i++)
         {
             if (scenes[i]->GetIsActive())
-                scenes[i]->Ticking.Update.TickEditorScripts();
+                scenes[i]->Ticking.Update.TickExecuteInEditor();
         }
     }
 #endif
@@ -210,7 +252,7 @@ void LevelService::LateUpdate()
         for (int32 i = 0; i < scenes.Count(); i++)
         {
             if (scenes[i]->GetIsActive())
-                scenes[i]->Ticking.LateUpdate.TickEditorScripts();
+                scenes[i]->Ticking.LateUpdate.TickExecuteInEditor();
         }
     }
 #endif
@@ -242,7 +284,7 @@ void LevelService::FixedUpdate()
         for (int32 i = 0; i < scenes.Count(); i++)
         {
             if (scenes[i]->GetIsActive())
-                scenes[i]->Ticking.FixedUpdate.TickEditorScripts();
+                scenes[i]->Ticking.FixedUpdate.TickExecuteInEditor();
         }
     }
 #endif
@@ -640,6 +682,39 @@ void LevelImpl::CallSceneEvent(SceneEventType eventType, Scene* scene, Guid scen
         Level::SceneUnloaded(scene, sceneId);
         break;
     }
+}
+
+int32 Level::GetOrAddTag(const StringView& tag)
+{
+    int32 index = Tags.Find(tag);
+    if (index == INVALID_INDEX)
+    {
+        index = Tags.Count();
+        Tags.AddOne() = tag;
+    }
+    return index;
+}
+
+int32 Level::GetNonEmptyLayerNamesCount()
+{
+    int32 result = 31;
+    while (result >= 0 && Layers[result].IsEmpty())
+        result--;
+    return result + 1;
+}
+
+int32 Level::GetLayerIndex(const StringView& layer)
+{
+    int32 result = -1;
+    for (int32 i = 0; i < 32; i++)
+    {
+        if (Layers[i] == layer)
+        {
+            result = i;
+            break;
+        }
+    }
+    return result;
 }
 
 void Level::callActorEvent(ActorEventType eventType, Actor* a, Actor* b)

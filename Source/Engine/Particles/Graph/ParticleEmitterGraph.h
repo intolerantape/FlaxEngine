@@ -99,6 +99,7 @@ protected:
     int32 _attrMass;
     int32 _attrRibbonWidth;
     int32 _attrColor;
+    int32 _attrRadius;
 
 public:
 
@@ -168,6 +169,8 @@ public:
     /// The particles modules for ribbon particles rendering.
     /// </summary>
     Array<NodeType*, FixedAllocation<PARTICLE_EMITTER_MAX_MODULES>> RibbonRenderingModules;
+
+    bool UsesVolumetricFogRendering = false;
 
 protected:
 
@@ -287,6 +290,13 @@ protected:
             node->UsesParticleData = true;
             USE_ATTRIBUTE(Age, Float, 0);
             USE_ATTRIBUTE(Lifetime, Float, 1);
+            break;
+        }
+            // Particle Mass
+        case GRAPH_NODE_MAKE_TYPE(14, 111):
+        {
+            node->UsesParticleData = true;
+            USE_ATTRIBUTE(Radius, Float, 0);
             break;
         }
             // Random
@@ -422,6 +432,7 @@ protected:
         CASE_SET_PARTICLE_ATTRIBUTE(260, 360, RibbonWidth, Float);
         CASE_SET_PARTICLE_ATTRIBUTE(261, 361, RibbonTwist, Float);
         CASE_SET_PARTICLE_ATTRIBUTE(262, 362, RibbonFacingVector, Vector3);
+        CASE_SET_PARTICLE_ATTRIBUTE(263, 363, Radius, Float);
 #undef CASE_SET_PARTICLE_ATTRIBUTE
             // Conform to Sphere
         case GRAPH_NODE_MAKE_TYPE(15, 305):
@@ -506,6 +517,14 @@ protected:
             USE_ATTRIBUTE(Age, Float, 1);
             break;
         }
+            // Volumetric Fog Rendering
+        case GRAPH_NODE_MAKE_TYPE(15, 405):
+        {
+            node->Assets[0] = Content::LoadAsync<Asset>((Guid)node->Values[2]);
+            USE_ATTRIBUTE(Position, Vector3, 0);
+            USE_ATTRIBUTE(Radius, Float, 1);
+            break;
+        }
         }
 
         // Check all input boxes
@@ -544,6 +563,7 @@ public:
         LightModules.Clear();
         SortModules.Clear();
         RibbonRenderingModules.Clear();
+        UsesVolumetricFogRendering = false;
 
         // Base
         Base::Clear();
@@ -607,6 +627,7 @@ public:
         SETUP_ATTRIBUTE(Mass, Float, Variant(1.0f));
         SETUP_ATTRIBUTE(RibbonWidth, Float, Variant(10.0f));
         SETUP_ATTRIBUTE(Color, Vector4, Variant(Vector4(0.0f, 0.0f, 0.0f, 1.0f)));
+        SETUP_ATTRIBUTE(Radius, Float, Variant(100.0f));
 #undef SETUP_ATTRIBUTE
 
         return false;
@@ -648,6 +669,9 @@ public:
                     break;
                 case 404:
                     RibbonRenderingModules.Add(n);
+                    break;
+                case 405:
+                    UsesVolumetricFogRendering = true;
                     break;
                 }
                 break;

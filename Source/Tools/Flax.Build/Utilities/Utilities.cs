@@ -15,6 +15,35 @@ namespace Flax.Build
     public static class Utilities
     {
         /// <summary>
+        /// Gets the hash code for the string (the same for all platforms). Matches Engine algorithm for string hashing.
+        /// </summary>
+        /// <param name="str">The input string.</param>
+        /// <returns>The file size text.</returns>
+        public static uint GetHashCode(string str)
+        {
+            uint hash = 5381;
+            if (str != null)
+            {
+                for (int i = 0; i < str.Length; i++)
+                {
+                    char c = str[i];
+                    hash = ((hash << 5) + hash) + (uint)c;
+                }
+            }
+            return hash;
+        }
+
+        /// <summary>
+        /// Gets the empty array of the given type (shared one).
+        /// </summary>
+        /// <typeparam name="T">The type.</typeparam>
+        /// <returns>The empty array object.</returns>
+        public static T[] GetEmptyArray<T>()
+        {
+            return Enumerable.Empty<T>() as T[];
+        }
+
+        /// <summary>
         /// Gets the size of the file as a readable string.
         /// </summary>
         /// <param name="path">The path.</param>
@@ -148,6 +177,19 @@ namespace Flax.Build
         }
 
         /// <summary>
+        /// Deletes the file.
+        /// </summary>
+        /// <param name="filePath">The file path.</param>
+        public static void FileDelete(string filePath)
+        {
+            var file = new FileInfo(filePath);
+            if (!file.Exists)
+                return;
+
+            file.Delete();
+        }
+
+        /// <summary>
         /// Deletes the directory.
         /// </summary>
         /// <param name="directoryPath">The directory path.</param>
@@ -155,7 +197,6 @@ namespace Flax.Build
         public static void DirectoryDelete(string directoryPath, bool withSubdirs = true)
         {
             var dir = new DirectoryInfo(directoryPath);
-
             if (!dir.Exists)
                 return;
 
@@ -163,6 +204,26 @@ namespace Flax.Build
                 DirectoryDelete(dir);
             else
                 dir.Delete();
+        }
+
+        /// <summary>
+        /// Deletes the files inside a directory.
+        /// </summary>
+        /// <param name="directoryPath">The directory path.</param>
+        /// <param name="searchPattern">The custom filter for the filenames to delete. Can be used to select files to delete. Null if unused.</param>
+        /// <param name="withSubdirs">if set to <c>true</c> with sub-directories (recursive delete operation).</param>
+        public static void FilesDelete(string directoryPath, string searchPattern = null, bool withSubdirs = true)
+        {
+            if (!Directory.Exists(directoryPath))
+                return;
+            if (searchPattern == null)
+                searchPattern = "*";
+
+            var files = Directory.GetFiles(directoryPath, searchPattern, withSubdirs ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
+            for (int i = 0; i < files.Length; i++)
+            {
+                File.Delete(files[i]);
+            }
         }
 
         /// <summary>
@@ -498,7 +559,7 @@ namespace Flax.Build
 
             bool isRooted = path.StartsWith("/");
             string result = string.Join(Path.DirectorySeparatorChar.ToString(), stack.Reverse());
-            if (isRooted)
+            if (isRooted && result[0] != '/')
                 result = result.Insert(0, "/");
             return result;
         }

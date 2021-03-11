@@ -163,7 +163,7 @@ void ManagedPostProcessEffect::FetchInfo()
     static MMethod* FetchInfoManaged = nullptr;
     if (FetchInfoManaged == nullptr)
     {
-        auto klass = GetBinaryModuleFlaxEngine()->Assembly->GetClass("FlaxEngine.PostProcessEffect");
+        auto klass = ((NativeBinaryModule*)GetBinaryModuleFlaxEngine())->Assembly->GetClass("FlaxEngine.PostProcessEffect");
         ASSERT(klass);
         FetchInfoManaged = klass->GetMethod("FetchInfo", 3);
         ASSERT(FetchInfoManaged);
@@ -220,6 +220,26 @@ SceneRenderTask::~SceneRenderTask()
 {
     if (Buffers)
         Buffers->DeleteObjectNow();
+}
+
+void SceneRenderTask::CameraCut()
+{
+    IsCameraCut = true;
+}
+
+void SceneRenderTask::AddCustomActor(Actor* actor)
+{
+    CustomActors.Add(actor);
+}
+
+void SceneRenderTask::RemoveCustomActor(Actor* actor)
+{
+    CustomActors.Remove(actor);
+}
+
+void SceneRenderTask::ClearCustomActors()
+{
+    CustomActors.Clear();
 }
 
 void SceneRenderTask::CollectPostFxVolumes(RenderContext& renderContext)

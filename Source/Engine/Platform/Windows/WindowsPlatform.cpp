@@ -7,6 +7,7 @@
 #include "Engine/Platform/CreateWindowSettings.h"
 #include "Engine/Platform/WindowsManager.h"
 #include "Engine/Platform/MemoryStats.h"
+#include "Engine/Platform/BatteryInfo.h"
 #include "Engine/Engine/Globals.h"
 #include "Engine/Core/Log.h"
 #include "Engine/Core/Collections/Dictionary.h"
@@ -419,7 +420,7 @@ bool WindowsPlatform::ReadRegValue(void* root, const String& key, const String& 
     }
 
     Array<Char> data;
-    data.Resize((int32)cbData);
+    data.Resize((int32)cbData / sizeof(Char));
     if (RegQueryValueExW(hKey, *name, nullptr, nullptr, reinterpret_cast<LPBYTE>(data.Get()), &cbData) != ERROR_SUCCESS)
     {
         RegCloseKey(hKey);
@@ -624,6 +625,8 @@ void WindowsPlatform::Exit()
 
     // Unregister app class
     UnregisterClassW(ApplicationWindowClass, nullptr);
+
+    Win32Platform::Exit();
 }
 
 #if !BUILD_RELEASE
@@ -670,12 +673,27 @@ void WindowsPlatform::SetHighDpiAwarenessEnabled(bool enable)
 
     if (setProcessDpiAwareness)
     {
-        setProcessDpiAwareness(enable ? PROCESS_SYSTEM_DPI_AWARE : PROCESS_DPI_UNAWARE);
+        setProcessDpiAwareness(enable ? PROCESS_PER_MONITOR_DPI_AWARE : PROCESS_DPI_UNAWARE);
     }
 
     SystemDpi = CalculateDpi(shCoreDll);
 
     FreeLibrary(shCoreDll);
+}
+
+BatteryInfo WindowsPlatform::GetBatteryInfo()
+{
+    BatteryInfo info;
+    SYSTEM_POWER_STATUS status;
+    GetSystemPowerStatus(&status);
+    info.BatteryLifePercent = (float)status.BatteryLifePercent / 255.0f;
+    if (status.BatteryFlag & 8)
+        info.State = BatteryInfo::States::BatteryCharging;
+    else if (status.BatteryFlag & 1 || status.BatteryFlag & 2 || status.BatteryFlag & 4)
+        info.State = BatteryInfo::States::BatteryDischarging;
+    else if (status.ACLineStatus == 1 || status.BatteryFlag & 128)
+        info.State = BatteryInfo::States::Connected;
+    return info;
 }
 
 int32 WindowsPlatform::GetDpi()
@@ -1105,7 +1123,7 @@ void* WindowsPlatform::LoadLibrary(const Char* filename)
     return handle;
 }
 
-Array<PlatformBase::StackFrame> WindowsPlatform::GetStackTrace(int32 skipCount, int32 maxDepth, void* context)
+Array<PlatformBase::StackFrame> WindowsPlatform::GetStackFrames(int32 skipCount, int32 maxDepth, void* context)
 {
     Array<StackFrame> result;
 #if CRASH_LOG_ENABLE

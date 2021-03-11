@@ -125,6 +125,7 @@ namespace FlaxEditor.Surface
             AutoFocus = false;
             TooltipText = nodeArch.Description;
             CullChildren = false;
+            BackgroundColor = Style.Current.BackgroundNormal;
 
             if (Archetype.DefaultValues != null)
             {
@@ -186,7 +187,10 @@ namespace FlaxEditor.Surface
             var titleLabelFont = Style.Current.FontLarge;
             for (int i = 0; i < Children.Count; i++)
             {
-                if (Children[i] is InputBox inputBox)
+                var child = Children[i];
+                if (!child.Visible)
+                    continue;
+                if (child is InputBox inputBox)
                 {
                     var boxWidth = boxLabelFont.MeasureText(inputBox.Text).X + 20;
                     if (inputBox.DefaultValueEditor != null)
@@ -194,12 +198,12 @@ namespace FlaxEditor.Surface
                     leftWidth = Mathf.Max(leftWidth, boxWidth);
                     leftHeight = Mathf.Max(leftHeight, inputBox.Archetype.Position.Y - Constants.NodeMarginY - Constants.NodeHeaderSize + 20.0f);
                 }
-                else if (Children[i] is OutputBox outputBox)
+                else if (child is OutputBox outputBox)
                 {
                     rightWidth = Mathf.Max(rightWidth, boxLabelFont.MeasureText(outputBox.Text).X + 20);
                     rightHeight = Mathf.Max(rightHeight, outputBox.Archetype.Position.Y - Constants.NodeMarginY - Constants.NodeHeaderSize + 20.0f);
                 }
-                else if (Children[i] is Control control)
+                else if (child is Control control)
                 {
                     if (control.AnchorPreset == AnchorPresets.TopLeft)
                     {
@@ -549,19 +553,22 @@ namespace FlaxEditor.Surface
 
         internal Box GetNextBox(Box box)
         {
-            int i = 0;
-            for (; i < Elements.Count; i++)
+            // Get the one after it
+            for (int i = box.IndexInParent + 1; i < Elements.Count; i++)
             {
-                if (Elements[i] == box)
+                if (Elements[i] is Box b)
                 {
-                    // We found the box
-                    break;
+                    return b;
                 }
             }
 
-            // Get the one after it
-            i++;
-            for (; i < Elements.Count; i++)
+            return null;
+        }
+
+        internal Box GetPreviousBox(Box box)
+        {
+            // Get the one before it
+            for (int i = box.IndexInParent - 1; i >= 0; i--)
             {
                 if (Elements[i] is Box b)
                 {
@@ -751,31 +758,61 @@ namespace FlaxEditor.Surface
             {
                 if (Elements[j] is OutputBox ob && ob.HasAnyConnection)
                 {
-                    ob.DrawConnections();
+                    ob.DrawConnections(ref mousePosition);
                 }
             }
 
+        }
+
+        /// <summary>
+        /// Draws all selected connections between surface objects related to this node.
+        /// </summary>
+        /// <param name="selectedConnectionIndex">The index of the currently selected connection.</param>
+        public void DrawSelectedConnections(int selectedConnectionIndex)
+        {
             if (_isSelected)
             {
-                bool hasBoxesSelection = HasBoxesSelection;
-                for (int j = 0; j < Elements.Count; j++)
+                if (HasBoxesSelection)
                 {
-                    if (Elements[j] is Box box && box.HasAnyConnection && (!hasBoxesSelection || box.IsSelected))
+                    for (int j = 0; j < Elements.Count; j++)
                     {
-                        if (box is OutputBox ob)
+                        if (Elements[j] is Box box && box.IsSelected && selectedConnectionIndex < box.Connections.Count)
                         {
-                            for (int i = 0; i < ob.Connections.Count; i++)
+                            if (box is OutputBox ob)
                             {
-                                ob.DrawSelectedConnection(ob.Connections[i]);
+                                ob.DrawSelectedConnection(ob.Connections[selectedConnectionIndex]);
                             }
-                        }
-                        else
-                        {
-                            for (int i = 0; i < box.Connections.Count; i++)
+                            else
                             {
-                                if (box.Connections[i] is OutputBox outputBox)
+                                if (box.Connections[selectedConnectionIndex] is OutputBox outputBox)
                                 {
                                     outputBox.DrawSelectedConnection(box);
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    for (int j = 0; j < Elements.Count; j++)
+                    {
+                        if (Elements[j] is Box box)
+                        {
+                            if (box is OutputBox ob)
+                            {
+                                for (int i = 0; i < ob.Connections.Count; i++)
+                                {
+                                    ob.DrawSelectedConnection(ob.Connections[i]);
+                                }
+                            }
+                            else
+                            {
+                                for (int i = 0; i < box.Connections.Count; i++)
+                                {
+                                    if (box.Connections[i] is OutputBox outputBox)
+                                    {
+                                        outputBox.DrawSelectedConnection(box);
+                                    }
                                 }
                             }
                         }
@@ -940,7 +977,7 @@ namespace FlaxEditor.Surface
 
             // Background
             var backgroundRect = new Rectangle(Vector2.Zero, Size);
-            Render2D.FillRectangle(backgroundRect, style.BackgroundNormal);
+            Render2D.FillRectangle(backgroundRect, BackgroundColor);
 
             // Breakpoint hit
             if (Breakpoint.Hit)

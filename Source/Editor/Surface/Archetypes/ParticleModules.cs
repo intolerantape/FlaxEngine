@@ -925,6 +925,7 @@ namespace FlaxEditor.Surface.Archetypes
             GetParticleAttribute(ModuleType.Initialize, 260, "Set Ribbon Width", "Sets the ribbon width", typeof(float), 20.0f),
             GetParticleAttribute(ModuleType.Initialize, 261, "Set Ribbon Twist", "Sets the ribbon twist angle (in degrees)", typeof(float), 0.0f),
             GetParticleAttribute(ModuleType.Initialize, 262, "Set Ribbon Facing Vector", "Sets the ribbon particles facing vector", typeof(Vector3), Vector3.Up),
+            GetParticleAttribute(ModuleType.Initialize, 263, "Set Radius", "Sets the particle radius", typeof(float), 100.0f),
 
             // Update Modules
             new NodeArchetype
@@ -1374,6 +1375,7 @@ namespace FlaxEditor.Surface.Archetypes
             GetParticleAttribute(ModuleType.Update, 360, "Set Ribbon Width", "Sets the ribbon width", typeof(float), 20.0f),
             GetParticleAttribute(ModuleType.Update, 361, "Set Ribbon Twist", "Sets the ribbon twist angle (in degrees)", typeof(float), 0.0f),
             GetParticleAttribute(ModuleType.Update, 362, "Set Ribbon Facing Vector", "Sets the ribbon particles facing vector", typeof(Vector3), Vector3.Up),
+            GetParticleAttribute(ModuleType.Update, 363, "Set Radius", "Sets the particle radius", typeof(float), 100.0f),
 
             // Render Modules
             new NodeArchetype
@@ -1483,7 +1485,7 @@ namespace FlaxEditor.Surface.Archetypes
                 TypeID = 404,
                 Create = CreateParticleModuleNode,
                 Title = "Ribbon Rendering",
-                Description = "Draws a a ribbon connecting all particles in order by particle age.",
+                Description = "Draws a ribbon connecting all particles in order by particle age.",
                 Flags = DefaultModuleFlags,
                 Size = new Vector2(200, 170),
                 DefaultValues = new object[]
@@ -1515,6 +1517,27 @@ namespace FlaxEditor.Surface.Archetypes
                     // Draw Modes
                     NodeElementArchetype.Factory.Text(0, 6.0f * Surface.Constants.LayoutOffsetY, "Draw Modes:", 40),
                     NodeElementArchetype.Factory.Enum(100.0f, 6.0f * Surface.Constants.LayoutOffsetY, 140, 6, typeof(DrawPass)),
+                },
+            },
+            new NodeArchetype
+            {
+                TypeID = 405,
+                Create = CreateParticleModuleNode,
+                Title = "Volumetric Fog Rendering",
+                Description = "Draws the particle into the volumetric fog (material color, opacity and emission are used for local fog properties).",
+                Flags = DefaultModuleFlags,
+                Size = new Vector2(200, 70),
+                DefaultValues = new object[]
+                {
+                    true,
+                    (int)ModuleType.Render,
+                    Guid.Empty, // Material
+                },
+                Elements = new[]
+                {
+                    // Material
+                    NodeElementArchetype.Factory.Text(0, -10, "Material", 80.0f, 16.0f, "The material used for volumetric fog rendering. It must have Domain set to Particle."),
+                    NodeElementArchetype.Factory.Asset(80, -10, 2, typeof(MaterialBase)),
                 },
             },
         };

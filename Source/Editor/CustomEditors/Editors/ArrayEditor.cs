@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections;
+using FlaxEditor.Scripting;
 using FlaxEngine;
 
 namespace FlaxEditor.CustomEditors.Editors
@@ -42,11 +43,26 @@ namespace FlaxEditor.CustomEditors.Editors
                     // Copy old values
                     Array.Copy(array, 0, newValues, 0, sharedCount);
 
-                    // Fill new entries with the last value
-                    for (int i = oldSize; i < newSize; i++)
+                    if (elementType.IsValueType)
                     {
-                        Array.Copy(array, oldSize - 1, newValues, i, 1);
+                        // Fill new entries with the last value
+                        for (int i = oldSize; i < newSize; i++)
+                            Array.Copy(array, oldSize - 1, newValues, i, 1);
                     }
+                    else
+                    {
+                        // Initialize new entries with default values
+                        var defaultValue = TypeUtils.GetDefaultValue(new ScriptType(elementType));
+                        for (int i = oldSize; i < newSize; i++)
+                            newValues.SetValue(defaultValue, i);
+                    }
+                }
+                else if (newSize > 0)
+                {
+                    // Initialize new entries with default values
+                    var defaultValue = TypeUtils.GetDefaultValue(new ScriptType(elementType));
+                    for (int i = 0; i < newSize; i++)
+                        newValues.SetValue(defaultValue, i);
                 }
 
                 SetValue(newValues);

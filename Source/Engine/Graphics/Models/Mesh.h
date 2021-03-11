@@ -377,7 +377,7 @@ public:
     /// Gets the draw call geometry for this mesh. Sets the index and vertex buffers.
     /// </summary>
     /// <param name="drawCall">The draw call.</param>
-    void GetDrawCallGeometry(DrawCall& drawCall);
+    void GetDrawCallGeometry(DrawCall& drawCall) const;
 
     /// <summary>
     /// Model instance drawing packed data.
@@ -459,7 +459,9 @@ public:
     /// <param name="world">The world transformation of the model.</param>
     /// <param name="flags">The object static flags.</param>
     /// <param name="receiveDecals">True if rendered geometry can receive decals, otherwise false.</param>
-    API_FUNCTION() void Draw(API_PARAM(Ref) const RenderContext& renderContext, MaterialBase* material, API_PARAM(Ref) const Matrix& world, StaticFlags flags = StaticFlags::None, bool receiveDecals = true) const;
+    /// <param name="drawModes">The draw passes to use for rendering this object.</param>
+    /// <param name="perInstanceRandom">The random per-instance value (normalized to range 0-1).</param>
+    API_FUNCTION() void Draw(API_PARAM(Ref) const RenderContext& renderContext, MaterialBase* material, API_PARAM(Ref) const Matrix& world, StaticFlags flags = StaticFlags::None, bool receiveDecals = true, DrawPass drawModes = DrawPass::Default, float perInstanceRandom = 0.0f) const;
 
     /// <summary>
     /// Draws the mesh.

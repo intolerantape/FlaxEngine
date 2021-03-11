@@ -26,7 +26,7 @@ public class Editor : EditorModule
                 // Platform Tools inside external platform implementation location
                 options.PrivateDefinitions.Add(macro);
                 options.SourcePaths.Add(externalPath);
-                options.SourceFiles.Add(Path.Combine(Globals.EngineRoot, "Source", "Platforms", platform, "Engine", "Platform", platform + "PlatformSettings.cs"));
+                AddSourceFileIfExists(options, Path.Combine(Globals.EngineRoot, "Source", "Platforms", platform, "Engine", "Platform", platform + "PlatformSettings.cs"));
             }
         }
     }
@@ -37,7 +37,6 @@ public class Editor : EditorModule
         base.Setup(options);
 
         options.PublicDependencies.Add("Engine");
-        options.PrivateDependencies.Add("Main");
         options.PrivateDependencies.Add("pugixml");
         options.PrivateDependencies.Add("UniversalAnalytics");
         options.PrivateDependencies.Add("ContentImporters");

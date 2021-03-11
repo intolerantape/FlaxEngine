@@ -2,8 +2,10 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Xml;
 using FlaxEditor.GUI;
 using FlaxEditor.GUI.ContextMenu;
@@ -72,7 +74,7 @@ namespace FlaxEditor.Windows
             /// <summary>
             /// The default height of the entries.
             /// </summary>
-            public const float DefaultHeight = 48.0f;
+            public const float DefaultHeight = 32.0f;
 
             private DebugLogWindow _window;
             public LogGroup Group;
@@ -128,10 +130,11 @@ namespace FlaxEditor.Windows
                     Render2D.FillRectangle(clientRect, style.Background * 0.9f);
 
                 // Icon
-                Render2D.DrawSprite(Icon, new Rectangle(5, 8, 32, 32), style.Foreground);
+                var iconColor = Group == LogGroup.Error ? Color.Red : (Group == LogGroup.Warning ? Color.Yellow : style.Foreground);
+                Render2D.DrawSprite(Icon, new Rectangle(5, 0, 32, 32), iconColor);
 
                 // Title
-                var textRect = new Rectangle(38, 6, clientRect.Width - 40, clientRect.Height - 10);
+                var textRect = new Rectangle(38, 2, clientRect.Width - 40, clientRect.Height - 10);
                 Render2D.PushClip(ref clientRect);
                 Render2D.DrawText(style.FontMedium, Desc.Title, textRect, style.Foreground);
                 Render2D.PopClip();
@@ -182,6 +185,11 @@ namespace FlaxEditor.Windows
                         return true;
                     }
                 }
+                // Enter
+                else if (key == KeyboardKeys.Return)
+                {
+                    Open();
+                }
                 // Ctrl+C
                 else if (key == KeyboardKeys.C && Root.GetKey(KeyboardKeys.Control))
                 {
@@ -193,18 +201,27 @@ namespace FlaxEditor.Windows
             }
 
             /// <summary>
+            /// Opens the entry location.
+            /// </summary>
+            public void Open()
+            {
+                if (!string.IsNullOrEmpty(Desc.LocationFile) && File.Exists(Desc.LocationFile))
+                {
+                    Editor.Instance.CodeEditing.OpenFile(Desc.LocationFile, Desc.LocationLine);
+                }
+            }
+
+            /// <summary>
             /// Copies the entry information to the system clipboard (as text).
             /// </summary>
             public void Copy()
             {
-                Clipboard.Text = Info.Replace("\n", Environment.NewLine);
+                Clipboard.Text = Info.Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
             }
 
             public override bool OnMouseDoubleClick(Vector2 location, MouseButton button)
             {
-                // Show the location
-                Editor.Instance.CodeEditing.OpenFile(Desc.LocationFile, Desc.LocationLine);
-
+                Open();
                 return true;
             }
 
@@ -237,6 +254,7 @@ namespace FlaxEditor.Windows
 
                     var menu = new ContextMenu();
                     menu.AddButton("Copy", Copy);
+                    menu.AddButton("Open", Open).Enabled = !string.IsNullOrEmpty(Desc.LocationFile) && File.Exists(Desc.LocationFile);
                     menu.Show(this, location);
                 }
 
@@ -257,7 +275,8 @@ namespace FlaxEditor.Windows
         private readonly VerticalPanel _entriesPanel;
         private LogEntry _selected;
         private readonly int[] _logCountPerGroup = new int[(int)LogGroup.Max];
-        private readonly Regex _logRegex = new Regex("at(.*) in (.*):(\\d*)");
+        private readonly Regex _logRegex = new Regex("at (.*) in (.*):(line (\\d*)|(\\d*))");
+        private readonly ThreadLocal<StringBuilder> _stringBuilder = new ThreadLocal<StringBuilder>(() => new StringBuilder(), false);
         private InterfaceOptions.TimestampsFormats _timestampsFormats;
 
         private readonly object _locker = new object();
@@ -266,6 +285,8 @@ namespace FlaxEditor.Windows
         private readonly ToolStripButton _clearOnPlayButton;
         private readonly ToolStripButton _pauseOnErrorButton;
         private readonly ToolStripButton[] _groupButtons = new ToolStripButton[3];
+
+        private LogType _iconType = LogType.Info;
 
         internal SpriteHandle IconInfo;
         internal SpriteHandle IconWarning;
@@ -279,6 +300,7 @@ namespace FlaxEditor.Windows
         : base(editor, true, ScrollBars.None)
         {
             Title = "Debug Log";
+            Icon = IconInfo;
             OnEditorOptionsChanged(Editor.Options.Options);
 
             // Toolstrip
@@ -381,6 +403,18 @@ namespace FlaxEditor.Windows
                 _pendingEntries.Add(newEntry);
             }
 
+            if (newEntry.Group == LogGroup.Warning && _iconType < LogType.Warning)
+            {
+                _iconType = LogType.Warning;
+                UpdateIcon();
+            }
+
+            if (newEntry.Group == LogGroup.Error && _iconType < LogType.Error)
+            {
+                _iconType = LogType.Error;
+                UpdateIcon();
+            }
+
             // Pause on Error (we should do it as fast as possible)
             if (newEntry.Group == LogGroup.Error && _pauseOnErrorButton.Checked && Editor.StateMachine.CurrentState == Editor.StateMachine.PlayingState)
             {
@@ -426,6 +460,12 @@ namespace FlaxEditor.Windows
             UpdateCount((int)LogGroup.Error, " Error");
             UpdateCount((int)LogGroup.Warning, " Warning");
             UpdateCount((int)LogGroup.Info, " Message");
+
+            if (_logCountPerGroup[(int)LogGroup.Error] == 0)
+            {
+                _iconType = _logCountPerGroup[(int)LogGroup.Warning] == 0 ? LogType.Info : LogType.Warning;
+                UpdateIcon();
+            }
         }
 
         private void UpdateCount(int group, string msg)
@@ -433,6 +473,22 @@ namespace FlaxEditor.Windows
             if (_logCountPerGroup[group] != 1)
                 msg += 's';
             _groupButtons[group].Text = _logCountPerGroup[group] + msg;
+        }
+
+        private void UpdateIcon()
+        {
+            if (_iconType == LogType.Warning)
+            {
+                Icon = IconWarning;
+            }
+            else if (_iconType == LogType.Error)
+            {
+                Icon = IconError;
+            }
+            else
+            {
+                Icon = IconInfo;
+            }
         }
 
         private void LogHandlerOnSendLog(LogType level, string msg, Object o, string stackTrace)
@@ -449,23 +505,32 @@ namespace FlaxEditor.Windows
                 // Detect code location and remove leading internal stack trace part
                 var matches = _logRegex.Matches(stackTrace);
                 bool foundStart = false, noLocation = true;
-                var fineStackTrace = new StringBuilder(stackTrace.Length);
+                var fineStackTrace = _stringBuilder.Value;
+                fineStackTrace.Clear();
+                fineStackTrace.Capacity = Mathf.Max(fineStackTrace.Capacity, stackTrace.Length);
                 for (int i = 0; i < matches.Count; i++)
                 {
                     var match = matches[i];
-                    if (foundStart)
+                    var matchLocation = match.Groups[1].Value.Trim();
+                    if (matchLocation.StartsWith("FlaxEngine.Debug.", StringComparison.Ordinal))
+                    {
+                        // C# start
+                        foundStart = true;
+                    }
+                    else if (matchLocation.StartsWith("DebugLog::", StringComparison.Ordinal))
+                    {
+                        // C++ start
+                        foundStart = true;
+                    }
+                    else if (foundStart)
                     {
                         if (noLocation)
                         {
                             desc.LocationFile = match.Groups[2].Value;
-                            int.TryParse(match.Groups[3].Value, out desc.LocationLine);
+                            int.TryParse(match.Groups[5].Value, out desc.LocationLine);
                             noLocation = false;
                         }
                         fineStackTrace.AppendLine(match.Groups[0].Value);
-                    }
-                    else if (match.Groups[1].Value.Trim().StartsWith("FlaxEngine.Debug.Info", StringComparison.Ordinal))
-                    {
-                        foundStart = true;
                     }
                 }
                 desc.Description = fineStackTrace.ToString();
@@ -564,6 +629,14 @@ namespace FlaxEditor.Windows
             {
                 Clear();
             }
+        }
+
+        /// <inheritdoc />
+        public override void OnStartContainsFocus()
+        {
+            _iconType = LogType.Info;
+            UpdateIcon();
+            base.OnStartContainsFocus();
         }
 
         /// <inheritdoc />

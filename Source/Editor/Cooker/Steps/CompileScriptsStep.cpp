@@ -11,6 +11,7 @@
 #include "Engine/Serialization/JsonWriters.h"
 #include "Editor/Cooker/PlatformTools.h"
 #include "Editor/Editor.h"
+#include "Editor/ProjectInfo.h"
 
 bool CompileScriptsStep::DeployBinaries(CookingData& data, const String& path, const String& projectFolderPath)
 {
@@ -217,6 +218,11 @@ bool CompileScriptsStep::Perform(CookingData& data)
         args += TEXT(" -SkipTargets=FlaxGame");
     }
 #endif
+    for (auto& define : data.CustomDefines)
+    {
+        args += TEXT(" -D");
+        args += define;
+    }
     if (ScriptsBuilder::RunBuildTool(args))
     {
         data.Error(TEXT("Failed to compile game scripts."));

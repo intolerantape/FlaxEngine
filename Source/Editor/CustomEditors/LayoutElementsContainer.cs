@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using FlaxEditor.CustomEditors.Elements;
 using FlaxEditor.CustomEditors.GUI;
 using FlaxEditor.GUI;
+using FlaxEditor.GUI.ContextMenu;
 using FlaxEngine;
 using FlaxEngine.Assertions;
 using FlaxEngine.GUI;
@@ -33,6 +34,38 @@ namespace FlaxEditor.CustomEditors
         /// Gets the control represented by this element.
         /// </summary>
         public abstract ContainerControl ContainerControl { get; }
+
+        /// <summary>
+        /// Adds new group element.
+        /// </summary>
+        /// <param name="title">The title.</param>
+        /// <param name="linkedEditor">The custom editor to be linked for a group. Used to provide more utility functions for a drop panel UI via context menu.</param>
+        /// <param name="useTransparentHeader">True if use drop down icon and transparent group header, otherwise use normal style.</param>
+        /// <returns>The created element.</returns>
+        public GroupElement Group(string title, CustomEditor linkedEditor, bool useTransparentHeader = false)
+        {
+            var element = Group(title, useTransparentHeader);
+            element.Panel.Tag = linkedEditor;
+            element.Panel.MouseButtonRightClicked += OnGroupPanelMouseButtonRightClicked;
+            return element;
+        }
+
+        private void OnGroupPanelMouseButtonRightClicked(DropPanel groupPanel, Vector2 location)
+        {
+            var linkedEditor = (CustomEditor)groupPanel.Tag;
+            var menu = new ContextMenu();
+
+            var revertToPrefab = menu.AddButton("Revert to Prefab", linkedEditor.RevertToReferenceValue);
+            revertToPrefab.Enabled = linkedEditor.CanRevertReferenceValue;
+            var resetToDefault = menu.AddButton("Reset to default", linkedEditor.RevertToDefaultValue);
+            resetToDefault.Enabled = linkedEditor.CanRevertDefaultValue;
+            menu.AddSeparator();
+            menu.AddButton("Copy", linkedEditor.Copy);
+            var paste = menu.AddButton("Paste", linkedEditor.Paste);
+            paste.Enabled = linkedEditor.CanPaste;
+
+            menu.Show(groupPanel, location);
+        }
 
         /// <summary>
         /// Adds new group element.
@@ -67,6 +100,28 @@ namespace FlaxEditor.CustomEditors
         private void OnPanelIsClosedChanged(DropPanel panel)
         {
             Editor.Instance.ProjectCache.SetCollapsedGroup(panel.HeaderText, panel.IsClosed);
+        }
+
+        /// <summary>
+        /// Adds new horizontal panel element.
+        /// </summary>
+        /// <returns>The created element.</returns>
+        public HorizontalPanelElement HorizontalPanel()
+        {
+            var element = new HorizontalPanelElement();
+            OnAddElement(element);
+            return element;
+        }
+        
+        /// <summary>
+        /// Adds new horizontal panel element.
+        /// </summary>
+        /// <returns>The created element.</returns>
+        public VerticalPanelElement VerticalPanel()
+        {
+            var element = new VerticalPanelElement();
+            OnAddElement(element);
+            return element;
         }
 
         /// <summary>
@@ -550,7 +605,7 @@ namespace FlaxEditor.CustomEditors
 
             if (style == DisplayStyle.Group)
             {
-                var group = Group(name, true);
+                var group = Group(name, editor, true);
                 group.Panel.Close(false);
                 group.Panel.TooltipText = tooltip;
                 return group.Object(values, editor);
@@ -580,8 +635,9 @@ namespace FlaxEditor.CustomEditors
 
             if (style == DisplayStyle.Group)
             {
-                var group = Group(label.Text, true);
+                var group = Group(label.Text, editor, true);
                 group.Panel.Close(false);
+                group.Panel.TooltipText = tooltip;
                 return group.Object(values, editor);
             }
 

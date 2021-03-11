@@ -296,7 +296,9 @@ namespace FlaxEditor.Modules
             InitDockPanel(mainWindow);
 
             // Add dummy control for drawing the main window borders if using a custom style
+#if PLATFORM_WINDOWS
             if (!Editor.Options.Options.Interface.UseNativeWindowSystem)
+#endif
             {
                 mainWindow.AddChild(new CustomWindowBorderControl
                 {
@@ -314,8 +316,7 @@ namespace FlaxEditor.Modules
                 if (win.IsMaximized)
                     return;
 
-                var style = Style.Current;
-                var color = style.BackgroundSelected;
+                var color = Editor.Instance.UI.StatusBar.StatusColor;
                 var rect = new Rectangle(0.5f, 0.5f, Parent.Width - 1.0f, Parent.Height - 1.0f - StatusBar.DefaultHeight);
                 Render2D.DrawLine(rect.UpperLeft, rect.UpperRight, color);
                 Render2D.DrawLine(rect.UpperLeft, rect.BottomLeft, color);
@@ -509,7 +510,7 @@ namespace FlaxEditor.Modules
             _toolStripRotate = (ToolStripButton)ToolStrip.AddButton(Editor.Icons.Rotate32, () => Editor.MainTransformGizmo.ActiveMode = TransformGizmoBase.Mode.Rotate).LinkTooltip("Change Gizmo tool mode to Rotate (2)");
             _toolStripScale = (ToolStripButton)ToolStrip.AddButton(Editor.Icons.Scale32, () => Editor.MainTransformGizmo.ActiveMode = TransformGizmoBase.Mode.Scale).LinkTooltip("Change Gizmo tool mode to Scale (3)");
             ToolStrip.AddSeparator();
-            _toolStripBuildScenes = (ToolStripButton)ToolStrip.AddButton(Editor.Icons.Build32, Editor.BuildScenesOrCancel).LinkTooltip("Build scenes data - CSG, navmesh, static lighting, env probes (Ctrl+F10)");
+            _toolStripBuildScenes = (ToolStripButton)ToolStrip.AddButton(Editor.Icons.Build32, Editor.BuildScenesOrCancel).LinkTooltip("Build scenes data - CSG, navmesh, static lighting, env probes - configurable via Build Actions in editor options (Ctrl+F10)");
             ToolStrip.AddSeparator();
             _toolStripPlay = (ToolStripButton)ToolStrip.AddButton(Editor.Icons.Play32, Editor.Simulation.RequestPlayOrStopPlay).LinkTooltip("Start/Stop game (F5)");
             _toolStripPause = (ToolStripButton)ToolStrip.AddButton(Editor.Icons.Pause32, Editor.Simulation.RequestResumeOrPause).LinkTooltip("Pause/Resume game(F6)");

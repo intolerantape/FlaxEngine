@@ -181,6 +181,23 @@ namespace Flax.Build
         /// <returns>The list of modules to use for build (unique items).</returns>
         public static Dictionary<Module, BuildOptions> CollectModules(RulesAssembly rules, Platform platform, Target target, BuildOptions targetBuildOptions, Toolchain toolchain, TargetArchitecture architecture, TargetConfiguration configuration)
         {
+            return CollectModules(rules, platform, target, targetBuildOptions, toolchain, architecture, configuration, target.Modules);
+        }
+
+        /// <summary>
+        /// Collects the modules required to build (includes dependencies).
+        /// </summary>
+        /// <param name="rules">The rules.</param>
+        /// <param name="target">The target.</param>
+        /// <param name="targetBuildOptions">The target build options.</param>
+        /// <param name="platform">The platform.</param>
+        /// <param name="toolchain">The toolchain.</param>
+        /// <param name="architecture">The architecture.</param>
+        /// <param name="configuration">The configuration.</param>
+        /// <param name="moduleNames">The list of root modules to start collection.</param>
+        /// <returns>The list of modules to use for build (unique items).</returns>
+        public static Dictionary<Module, BuildOptions> CollectModules(RulesAssembly rules, Platform platform, Target target, BuildOptions targetBuildOptions, Toolchain toolchain, TargetArchitecture architecture, TargetConfiguration configuration, IEnumerable<string> moduleNames)
+        {
             var buildData = new BuildData
             {
                 Rules = rules,
@@ -193,7 +210,7 @@ namespace Flax.Build
             };
 
             // Collect all modules
-            foreach (var moduleName in target.Modules)
+            foreach (var moduleName in moduleNames)
             {
                 var module = rules.GetModule(moduleName);
                 if (module != null)
@@ -229,17 +246,26 @@ namespace Flax.Build
             }
         }
 
-        private static IGrouping<string, Module>[] GetBinaryModules(RulesAssembly rules, Target target, Dictionary<Module, BuildOptions> buildModules)
+        private static IGrouping<string, Module>[] GetBinaryModules(ProjectInfo project, Target target, Dictionary<Module, BuildOptions> buildModules)
         {
             var modules = new List<Module>();
             switch (target.LinkType)
             {
             case TargetLinkType.Monolithic:
+                // Include all modules
                 modules.AddRange(buildModules.Keys);
                 break;
             case TargetLinkType.Modular:
-                modules.AddRange(target.Modules.Select(rules.GetModule));
+            {
+                // Include all modules from the project that contains this target
+                var sourcePath = Path.Combine(project.ProjectFolderPath, "Source");
+                foreach (var module in buildModules.Keys)
+                {
+                    if (module.FolderPath.StartsWith(sourcePath))
+                        modules.Add(module);
+                }
                 break;
+            }
             default: throw new ArgumentOutOfRangeException();
             }
             modules.RemoveAll(x => x == null || string.IsNullOrEmpty(x.BinaryModuleName));
@@ -259,7 +285,7 @@ namespace Flax.Build
             return moduleOptions;
         }
 
-        private static void BuildModuleInner(BuildData buildData, Module module, BuildOptions moduleOptions)
+        internal static void BuildModuleInner(BuildData buildData, Module module, BuildOptions moduleOptions, bool withApi = true)
         {
             // Inherit build environment from dependent modules
             foreach (var moduleName in moduleOptions.PrivateDependencies)
@@ -330,9 +356,14 @@ namespace Flax.Build
                 }
 
                 // Collect all files to compile
-                var cppFiles = moduleOptions.SourceFiles.Where(x => x.EndsWith(".cpp")).ToList();
+                var cppFiles = new List<string>(moduleOptions.SourceFiles.Count / 2);
+                for (int i = 0; i < moduleOptions.SourceFiles.Count; i++)
+                {
+                    if (moduleOptions.SourceFiles[i].EndsWith(".cpp", StringComparison.OrdinalIgnoreCase))
+                        cppFiles.Add(moduleOptions.SourceFiles[i]);
+                }
 
-                if (!string.IsNullOrEmpty(module.BinaryModuleName))
+                if (!string.IsNullOrEmpty(module.BinaryModuleName) && withApi)
                 {
                     // Generate scripting bindings
                     using (new ProfileEventScope("GenerateBindings"))
@@ -391,7 +422,7 @@ namespace Flax.Build
             }
         }
 
-        private static void BuildModuleInnerBindingsOnly(BuildData buildData, Module module, BuildOptions moduleOptions)
+        internal static void BuildModuleInnerBindingsOnly(BuildData buildData, Module module, BuildOptions moduleOptions)
         {
             // Inherit build environment from dependent modules
             foreach (var moduleName in moduleOptions.PrivateDependencies)
@@ -650,7 +681,7 @@ namespace Flax.Build
             using (new ProfileEventScope("SetupBinaryModules"))
             {
                 // Collect all binary modules to include into target
-                buildData.BinaryModules = GetBinaryModules(rules, target, buildData.Modules);
+                buildData.BinaryModules = GetBinaryModules(project, target, buildData.Modules);
 
                 // Inject binary modules symbols import/export defines
                 for (int i = 0; i < buildData.BinaryModules.Length; i++)
@@ -664,14 +695,14 @@ namespace Flax.Build
                             if (buildData.Target.LinkType == TargetLinkType.Modular)
                             {
                                 // Export symbols from binary module
-                                moduleOptions.CompileEnv.PreprocessorDefinitions.Add(binaryModuleNameUpper + (target.UseSymbolsExports ? "_API=DLLEXPORT" : "_API="));
+                                moduleOptions.CompileEnv.PreprocessorDefinitions.Add(binaryModuleNameUpper + (target.UseSymbolsExports ? "_API=" + toolchain.DllExport : "_API="));
                             }
                             else
                             {
                                 // Export symbols from all binary modules in the build
                                 foreach (var q in buildData.BinaryModules)
                                 {
-                                    moduleOptions.CompileEnv.PreprocessorDefinitions.Add(q.Key.ToUpperInvariant() + (target.UseSymbolsExports ? "_API=DLLEXPORT" : "_API="));
+                                    moduleOptions.CompileEnv.PreprocessorDefinitions.Add(q.Key.ToUpperInvariant() + (target.UseSymbolsExports ? "_API=" + toolchain.DllExport : "_API="));
                                 }
                             }
 
@@ -684,7 +715,7 @@ namespace Flax.Build
                                         if (buildData.Target.LinkType == TargetLinkType.Modular)
                                         {
                                             // Import symbols from referenced binary module
-                                            moduleOptions.CompileEnv.PreprocessorDefinitions.Add(q.Name.ToUpperInvariant() + "_API=DLLIMPORT");
+                                            moduleOptions.CompileEnv.PreprocessorDefinitions.Add(q.Name.ToUpperInvariant() + "_API=" + toolchain.DllImport);
 
                                             // Link against the referenced binary module
                                             if (toolchain.UseImportLibraryWhenLinking)
@@ -695,7 +726,7 @@ namespace Flax.Build
                                         else if (target.UseSymbolsExports)
                                         {
                                             // Export symbols from referenced binary module to be visible further
-                                            moduleOptions.CompileEnv.PreprocessorDefinitions.Add(q.Name.ToUpperInvariant() + "_API=DLLEXPORT");
+                                            moduleOptions.CompileEnv.PreprocessorDefinitions.Add(q.Name.ToUpperInvariant() + "_API=" + toolchain.DllExport);
                                         }
                                         else
                                         {
@@ -746,7 +777,9 @@ namespace Flax.Build
             using (new ProfileEventScope("BuildBindings"))
             {
                 if (!buildData.Target.IsPreBuilt)
+                {
                     BuildTargetBindings(rules, graph, buildData);
+                }
             }
 
             // Link modules into a target
@@ -798,6 +831,11 @@ namespace Flax.Build
                             // C#-only binary module
                             binaryModuleInfo.NativePath = string.Empty;
                         }
+                        if (!binaryModule.Any(x => x.BuildCSharp))
+                        {
+                            // Skip C#
+                            binaryModuleInfo.ManagedPath = string.Empty;
+                        }
                         break;
                     }
                     case TargetLinkType.Modular:
@@ -816,6 +854,11 @@ namespace Flax.Build
                         {
                             // C#-only binary module
                             binaryModuleInfo.NativePath = string.Empty;
+                        }
+                        if (!module.BuildCSharp)
+                        {
+                            // Skip C#
+                            binaryModuleInfo.ManagedPath = string.Empty;
                         }
                         break;
                     }
@@ -981,7 +1024,7 @@ namespace Flax.Build
             using (new ProfileEventScope("SetupBinaryModules"))
             {
                 // Collect all binary modules to include into target
-                buildData.BinaryModules = GetBinaryModules(rules, target, buildData.Modules);
+                buildData.BinaryModules = GetBinaryModules(project, target, buildData.Modules);
             }
 
             // Generate code for binary modules included in the target

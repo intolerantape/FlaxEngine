@@ -97,7 +97,9 @@ namespace FlaxEditor.Windows
                     new KeyValuePair<string, Type>("Audio Listener", typeof(AudioListener)),
                     new KeyValuePair<string, Type>("Scene Animation", typeof(SceneAnimationPlayer)),
                     new KeyValuePair<string, Type>("Nav Mesh Bounds Volume", typeof(NavMeshBoundsVolume)),
-                    new KeyValuePair<string, Type>("Nav Mesh Link", typeof(NavLink)),
+                    new KeyValuePair<string, Type>("Nav Link", typeof(NavLink)),
+                    new KeyValuePair<string, Type>("Nav Modifier Volume", typeof(NavModifierVolume)),
+                    new KeyValuePair<string, Type>("Spline", typeof(Spline)),
                 }
             },
             new ActorsGroup
@@ -108,6 +110,7 @@ namespace FlaxEditor.Windows
                     new KeyValuePair<string, Type>("UI Control", typeof(UIControl)),
                     new KeyValuePair<string, Type>("UI Canvas", typeof(UICanvas)),
                     new KeyValuePair<string, Type>("Text Render", typeof(TextRender)),
+                    new KeyValuePair<string, Type>("Sprite Render", typeof(SpriteRender)),
                 }
             },
         };

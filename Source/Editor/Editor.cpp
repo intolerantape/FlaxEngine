@@ -3,6 +3,7 @@
 #if USE_EDITOR
 
 #include "Editor.h"
+#include "ProjectInfo.h"
 #include "Engine/Core/Log.h"
 #include "Scripting/ScriptsBuilder.h"
 #include "Windows/SplashScreen.h"
@@ -19,6 +20,9 @@
 #include "Engine/Engine/Engine.h"
 #include "Engine/ShadowsOfMordor/Builder.h"
 #include "FlaxEngine.Gen.h"
+#if PLATFORM_LINUX
+#include "Engine/Tools/TextureTool/TextureTool.h"
+#endif
 
 namespace EditorImpl
 {
@@ -480,7 +484,29 @@ int32 Editor::LoadProduct()
 
 Window* Editor::CreateMainWindow()
 {
-    return Managed->GetMainWindow();
+    Window* window = Managed->GetMainWindow();
+
+#if PLATFORM_LINUX
+    // Set window icon
+    const String iconPath = Globals::BinariesFolder / TEXT("Logo.png");
+    if (FileSystem::FileExists(iconPath))
+    {
+        TextureData icon;
+        if (TextureTool::ImportTexture(iconPath, icon))
+        {
+            LOG(Warning, "Failed to load icon file.");
+        }
+        else
+        {
+            window->SetIcon(icon);
+        }
+    }
+    else
+    {
+        LOG(Warning, "Missing icon file.");
+    }
+#endif
+    return window;
 }
 
 bool Editor::Init()

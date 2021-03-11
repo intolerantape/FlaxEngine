@@ -37,13 +37,13 @@ namespace FlaxEditor.SceneGraph.Actors
             {
                 get
                 {
-                    var actor = (NavLink)((NavLinkNode)ParentNode).Actor;
+                    var actor = (NavLink)_node.Actor;
                     Transform localTrans = new Transform(_isStart ? actor.Start : actor.End);
                     return actor.Transform.LocalToWorld(localTrans);
                 }
                 set
                 {
-                    var actor = (NavLink)((NavLinkNode)ParentNode).Actor;
+                    var actor = (NavLink)_node.Actor;
                     Transform localTrans = actor.Transform.WorldToLocal(value);
                     if (_isStart)
                         actor.Start = localTrans.Translation;
@@ -77,6 +77,9 @@ namespace FlaxEditor.SceneGraph.Actors
             bytes[0] += 1;
             AddChildNode(new LinkNode(this, new Guid(bytes), false));
         }
+
+        /// <inheritdoc />
+        public override bool AffectsNavigation => true;
 
         /// <inheritdoc />
         public override bool RayCastSelf(ref RayCastData ray, out float distance, out Vector3 normal)

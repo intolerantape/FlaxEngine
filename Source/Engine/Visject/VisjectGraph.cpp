@@ -379,9 +379,8 @@ void VisjectExecutor::ProcessGroupMath(Box* box, Node* node, Value& value)
         const Vector2 rangeB = tryGetValue(node->GetBox(2), node->Values[2]).AsVector2();
         const bool clamp = tryGetValue(node->GetBox(3), node->Values[3]).AsBool;
 
-        auto mapFunc = rangeB.X + (inVal - rangeA.X) * (rangeB.Y - rangeB.X) / (rangeA.Y - rangeA.X);
+        auto mapFunc = Math::Remap(inVal, rangeA.X, rangeA.Y, rangeB.X, rangeB.Y);
         
-        // Clamp value?
         value = clamp ? Math::Clamp(mapFunc, rangeB.X, rangeB.Y) : mapFunc;
         break;
     }
@@ -532,6 +531,12 @@ void VisjectExecutor::ProcessGroupPacking(Box* box, Node* node, Value& value)
     {
         const Vector4 v = (Vector4)tryGetValue(node->GetBox(0), Vector4::Zero);
         value = Vector2(v.Y, v.Z);
+        break;
+    }
+    case 47:
+    {
+        const Vector4 v = (Vector4)tryGetValue(node->GetBox(0), Vector4::Zero);
+        value = Vector2(v.Z, v.W);
         break;
     }
         // Mask XYZ
@@ -717,7 +722,7 @@ void VisjectExecutor::ProcessGroupTools(Box* box, Node* node, Value& value)
         // Asset Reference
     case 18:
     {
-        value = Content::LoadAsync<Asset>((Guid)node->Values[0]);
+        value = ::LoadAsset((Guid)node->Values[0], Asset::TypeInitializer);
         break;
     }
         // To String
@@ -730,6 +735,12 @@ void VisjectExecutor::ProcessGroupTools(Box* box, Node* node, Value& value)
     case 21:
     {
         value = Scripting::FindObject<Actor>((Guid)node->Values[0]);
+        break;
+    }
+
+    case 29:
+    {
+        value = tryGetValue(node->GetBox(0), Value::Zero);
         break;
     }
     default:

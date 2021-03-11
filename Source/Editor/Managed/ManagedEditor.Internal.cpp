@@ -2,6 +2,7 @@
 
 #include "ManagedEditor.h"
 #include "Editor/Editor.h"
+#include "Editor/ProjectInfo.h"
 #include "Engine/Platform/FileSystem.h"
 #include "Engine/Platform/WindowsManager.h"
 #include "Engine/ContentImporters/AssetsImportingManager.h"
@@ -24,7 +25,7 @@
 #include "Engine/ContentImporters/ImportAudio.h"
 #include "Engine/ContentImporters/CreateCollisionData.h"
 #include "Engine/ContentImporters/CreateJson.h"
-#include "Engine/Core/Config/LayersTagsSettings.h"
+#include "Engine/Level/Level.h"
 #include "Engine/Core/Config/GameSettings.h"
 #include "Engine/Core/Cache.h"
 #include "Engine/CSG/CSGBuilder.h"
@@ -302,22 +303,20 @@ namespace CustomEditorsUtilInternal
     }
 }
 
-namespace LayersAndTagsSettingsInternal
+namespace LayersAndTagsSettingsInternal1
 {
     MonoArray* GetCurrentTags()
     {
-        auto settings = LayersAndTagsSettings::Instance();
-        return MUtils::ToArray(settings->Tags);
+        return MUtils::ToArray(Level::Tags);
     }
 
     MonoArray* GetCurrentLayers()
     {
-        const auto settings = LayersAndTagsSettings::Instance();
-        return MUtils::ToArray(Span<String>(settings->Layers, Math::Max(1, settings->GetNonEmptyLayerNamesCount())));
+        return MUtils::ToArray(Span<String>(Level::Layers, Math::Max(1, Level::GetNonEmptyLayerNamesCount())));
     }
 }
 
-namespace GameSettingsInternal
+namespace GameSettingsInternal1
 {
     void Apply()
     {
@@ -579,15 +578,11 @@ public:
         MUtils::ToString(outputPathObj, outputPath);
         FileSystem::NormalizePath(outputPath);
 
-        DataContainer<char> data;
-        const auto dataObjLength = mono_string_length(dataObj);
         const auto dataObjPtr = mono_string_to_utf8(dataObj);
-        data.Link(dataObjPtr, dataObjLength);
+        StringAnsiView data(dataObjPtr);
 
-        DataContainer<char> dataTypeName;
-        const auto dataTypeNameObjLength = mono_string_length(dataTypeNameObj);
         const auto dataTypeNameObjPtr = mono_string_to_utf8(dataTypeNameObj);
-        dataTypeName.Link(dataTypeNameObjPtr, dataTypeNameObjLength);
+        StringAnsiView dataTypeName(dataTypeNameObjPtr);
 
         const bool result = CreateJson::Create(outputPath, data, dataTypeName);
 
@@ -901,7 +896,7 @@ public:
         if (stack && stack->Scope)
         {
             const int32 count = stack->Scope->Parameters.Length() + stack->Scope->ReturnedValues.Count();
-            const auto mclass = GetBinaryModuleFlaxEngine()->Assembly->GetClass("FlaxEditor.Editor+VisualScriptLocal");
+            const auto mclass = ((NativeBinaryModule*)GetBinaryModuleFlaxEngine())->Assembly->GetClass("FlaxEditor.Editor+VisualScriptLocal");
             ASSERT(mclass);
             result = mono_array_new(mono_domain_get(), mclass->GetNative(), count);
             VisualScriptLocalManaged local;
@@ -955,7 +950,7 @@ public:
                 s = s->PreviousFrame;
                 count++;
             }
-            const auto mclass = GetBinaryModuleFlaxEngine()->Assembly->GetClass("FlaxEditor.Editor+VisualScriptStackFrame");
+            const auto mclass = ((NativeBinaryModule*)GetBinaryModuleFlaxEngine())->Assembly->GetClass("FlaxEditor.Editor+VisualScriptStackFrame");
             ASSERT(mclass);
             result = mono_array_new(mono_domain_get(), mclass->GetNative(), count);
             s = stack;
@@ -1054,9 +1049,9 @@ public:
         ADD_INTERNAL_CALL("FlaxEditor.Content.Import.TextureImportEntry::Internal_GetTextureImportOptions", &GetTextureImportOptions);
         ADD_INTERNAL_CALL("FlaxEditor.Content.Import.ModelImportEntry::Internal_GetModelImportOptions", &GetModelImportOptions);
         ADD_INTERNAL_CALL("FlaxEditor.Content.Import.AudioImportEntry::Internal_GetAudioImportOptions", &GetAudioImportOptions);
-        ADD_INTERNAL_CALL("FlaxEditor.Content.Settings.LayersAndTagsSettings::GetCurrentTags", &LayersAndTagsSettingsInternal::GetCurrentTags);
-        ADD_INTERNAL_CALL("FlaxEditor.Content.Settings.LayersAndTagsSettings::GetCurrentLayers", &LayersAndTagsSettingsInternal::GetCurrentLayers);
-        ADD_INTERNAL_CALL("FlaxEditor.Content.Settings.GameSettings::Apply", &GameSettingsInternal::Apply);
+        ADD_INTERNAL_CALL("FlaxEditor.Content.Settings.LayersAndTagsSettings::GetCurrentTags", &LayersAndTagsSettingsInternal1::GetCurrentTags);
+        ADD_INTERNAL_CALL("FlaxEditor.Content.Settings.LayersAndTagsSettings::GetCurrentLayers", &LayersAndTagsSettingsInternal1::GetCurrentLayers);
+        ADD_INTERNAL_CALL("FlaxEditor.Content.Settings.GameSettings::Apply", &GameSettingsInternal1::Apply);
         ADD_INTERNAL_CALL("FlaxEditor.Editor::Internal_CloseSplashScreen", &CloseSplashScreen);
         ADD_INTERNAL_CALL("FlaxEditor.Editor::Internal_CreateAsset", &CreateAsset);
         ADD_INTERNAL_CALL("FlaxEditor.Editor::Internal_CreateVisualScript", &CreateVisualScript);

@@ -4,7 +4,6 @@
 
 #include "LinuxPlatform.h"
 #include "LinuxWindow.h"
-#include "LinuxInput.h"
 #include "Engine/Core/Log.h"
 #include "Engine/Core/Types/Guid.h"
 #include "Engine/Core/Types/String.h"
@@ -17,11 +16,17 @@
 #include "Engine/Core/Math/Color32.h"
 #include "Engine/Platform/CPUInfo.h"
 #include "Engine/Platform/MemoryStats.h"
+#include "Engine/Platform/StringUtils.h"
 #include "Engine/Platform/MessageBox.h"
 #include "Engine/Platform/WindowsManager.h"
+#include "Engine/Platform/Clipboard.h"
 #include "Engine/Utilities/StringConverter.h"
 #include "Engine/Threading/Threading.h"
+#include "Engine/Engine/Engine.h"
 #include "Engine/Engine/CommandLine.h"
+#include "Engine/Input/Input.h"
+#include "Engine/Input/Mouse.h"
+#include "Engine/Input/Keyboard.h"
 #include "IncludeX11.h"
 #include <sys/resource.h>
 #include <sys/sysinfo.h>
@@ -59,6 +64,7 @@ X11::Atom xAtomWmStateMaxVert;
 X11::Atom xAtomWmStateMaxHorz;
 X11::Atom xAtomWmWindowOpacity;
 X11::Atom xAtomWmName;
+X11::Atom xAtomClipboard;
 int32 SystemDpi = 96;
 X11::Cursor Cursors[(int32)CursorType::MAX];
 X11::XcursorImage* CursorsImg[(int32)CursorType::MAX];
@@ -354,9 +360,7 @@ static int X11_MessageBoxCreateWindow(MessageBoxData* data)
 		data->screen = X11_DefaultScreen(display);
 	}
 
-	data->event_mask = ExposureMask |
-			ButtonPressMask | ButtonReleaseMask | KeyPressMask | KeyReleaseMask |
-			StructureNotifyMask | FocusChangeMask | PointerMotionMask;
+	data->event_mask = ExposureMask | ButtonPressMask | ButtonReleaseMask | KeyPressMask | KeyReleaseMask | StructureNotifyMask | FocusChangeMask | PointerMotionMask;
 	wnd_attr.event_mask = data->event_mask;
 
 	data->window = X11::XCreateWindow(
@@ -513,106 +517,98 @@ static int X11_MessageBoxLoop(MessageBoxData* data)
 
 		switch (e.type)
 		{
-			case Expose:
-				if (e.xexpose.count > 0)
+		case Expose:
+			if (e.xexpose.count > 0)
+			{
+				draw = false;
+			}
+			break;
+		case FocusIn:
+			// Got focus.
+			has_focus = true;
+			break;
+		case FocusOut:
+			// Lost focus. Reset button and mouse info
+			has_focus = false;
+			data->button_press_index = -1;
+			data->mouse_over_index = -1;
+			break;
+		case MotionNotify:
+			if (has_focus)
+			{
+				// Mouse moved
+				const int previndex = data->mouse_over_index;
+				data->mouse_over_index = GetHitButtonIndex(data, e.xbutton.x, e.xbutton.y);
+				if (data->mouse_over_index == previndex)
 				{
 					draw = false;
 				}
-				break;
-
-			case FocusIn:
-				// Got focus.
-				has_focus = true;
-				break;
-
-			case FocusOut:
-				// Lost focus. Reset button and mouse info
-				has_focus = false;
-				data->button_press_index = -1;
-				data->mouse_over_index = -1;
-				break;
-
-			case MotionNotify:
-				if (has_focus)
-				{
-					// Mouse moved
-					const int previndex = data->mouse_over_index;
-					data->mouse_over_index = GetHitButtonIndex(data, e.xbutton.x, e.xbutton.y);
-					if (data->mouse_over_index == previndex)
-					{
-						draw = false;
-					}
-				}
-				break;
-
-			case ClientMessage:
-				if (e.xclient.message_type == data->wm_protocols &&
-					e.xclient.format == 32 &&
-					e.xclient.data.l[0] == data->wm_delete_message)
-				{
-					close_dialog = true;
-				}
-				break;
-
-			case KeyPress:
-				// Store key press - we make sure in key release that we got both
-				last_key_pressed = X11::XLookupKeysym(&e.xkey, 0);
-				break;
-
-			case KeyRelease:
-			{
-				uint32 mask = 0;
-				const X11::KeySym key = X11::XLookupKeysym(&e.xkey, 0);
-
-				// If this is a key release for something we didn't get the key down for, then bail
-				if (key != last_key_pressed)
-					break;
-
-				if (key == XK_Escape)
-					mask = MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
-				else if ((key == XK_Return) || (key == XK_KP_Enter))
-					mask = MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
-
-				if (mask)
-				{
-					// Look for first button with this mask set, and return it if found
-					for (int buttonIndex = 0; buttonIndex < data->numbuttons; buttonIndex++)
-					{
-						const auto button = &data->buttons[buttonIndex];
-						if (button->flags & mask)
-						{
-							data->resultButtonIndex = buttonIndex;
-							close_dialog = true;
-							break;
-						}
-					}
-				}
-				break;
 			}
+			break;
+		case ClientMessage:
+			if (e.xclient.message_type == data->wm_protocols &&
+				e.xclient.format == 32 &&
+				e.xclient.data.l[0] == data->wm_delete_message)
+			{
+				close_dialog = true;
+			}
+			break;
+		case KeyPress:
+			// Store key press - we make sure in key release that we got both
+			last_key_pressed = X11::XLookupKeysym(&e.xkey, 0);
+			break;
+		case KeyRelease:
+		{
+			uint32 mask = 0;
+			const X11::KeySym key = X11::XLookupKeysym(&e.xkey, 0);
 
-			case ButtonPress:
-				data->button_press_index = -1;
-				if (e.xbutton.button == Button1)
-				{
-					// Find index of button they clicked on
-					data->button_press_index = GetHitButtonIndex(data, e.xbutton.x, e.xbutton.y);
-				}
+			// If this is a key release for something we didn't get the key down for, then bail
+			if (key != last_key_pressed)
 				break;
 
-			case ButtonRelease:
-				// If button is released over the same button that was clicked down on, then return it
-				if ((e.xbutton.button == Button1) && (data->button_press_index >= 0))
+			if (key == XK_Escape)
+				mask = MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
+			else if ((key == XK_Return) || (key == XK_KP_Enter))
+				mask = MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
+
+			if (mask)
+			{
+				// Look for first button with this mask set, and return it if found
+				for (int buttonIndex = 0; buttonIndex < data->numbuttons; buttonIndex++)
 				{
-					const int buttonIndex = GetHitButtonIndex(data, e.xbutton.x, e.xbutton.y);
-					if (data->button_press_index == buttonIndex)
+					const auto button = &data->buttons[buttonIndex];
+					if (button->flags & mask)
 					{
-						const MessageBoxButtonData* button = &data->buttons[buttonIndex];
 						data->resultButtonIndex = buttonIndex;
 						close_dialog = true;
+						break;
 					}
 				}
-				data->button_press_index = -1;
-				break;
+			}
+			break;
+		}
+		case ButtonPress:
+			data->button_press_index = -1;
+			if (e.xbutton.button == Button1)
+			{
+				// Find index of button they clicked on
+				data->button_press_index = GetHitButtonIndex(data, e.xbutton.x, e.xbutton.y);
+			}
+			break;
+		case ButtonRelease:
+			// If button is released over the same button that was clicked down on, then return it
+			if ((e.xbutton.button == Button1) && (data->button_press_index >= 0))
+			{
+				const int buttonIndex = GetHitButtonIndex(data, e.xbutton.x, e.xbutton.y);
+				if (data->button_press_index == buttonIndex)
+				{
+					const MessageBoxButtonData* button = &data->buttons[buttonIndex];
+					data->resultButtonIndex = buttonIndex;
+					close_dialog = true;
+				}
+			}
+			data->button_press_index = -1;
+			break;
 		}
 
 		if (draw)
@@ -642,126 +638,126 @@ DialogResult MessageBox::Show(Window* parent, const StringView& text, const Stri
 	Platform::MemoryClear(&buttonsData, sizeof(buttonsData));
 	switch (buttons)
 	{
-		case MessageBoxButtons::AbortRetryIgnore:
-		{
-			data.numbuttons = 3;
+	case MessageBoxButtons::AbortRetryIgnore:
+	{
+		data.numbuttons = 3;
 
-			// Abort
-			auto& abort = buttonsData[0];
-			abort.text = "Abort";
-			abort.result = DialogResult::Abort;
-			abort.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
-			abort.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
+		// Abort
+		auto& abort = buttonsData[0];
+		abort.text = "Abort";
+		abort.result = DialogResult::Abort;
+		abort.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
+		abort.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
 
-			// Retry
-			auto& retry = buttonsData[1];
-			retry.text = "Retry";
-			retry.result = DialogResult::Retry;
-			retry.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
-			retry.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
+		// Retry
+		auto& retry = buttonsData[1];
+		retry.text = "Retry";
+		retry.result = DialogResult::Retry;
+		retry.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
+		retry.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
 
-			// Ignore
-			auto& ignore = buttonsData[2];
-			ignore.text = "Ignore";
-			ignore.result = DialogResult::Ignore;
-			ignore.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
-			ignore.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
+		// Ignore
+		auto& ignore = buttonsData[2];
+		ignore.text = "Ignore";
+		ignore.result = DialogResult::Ignore;
+		ignore.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
+		ignore.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
 
-			break;
-		}
-		case MessageBoxButtons::OK:
-		{
-			data.numbuttons = 1;
+		break;
+	}
+	case MessageBoxButtons::OK:
+	{
+		data.numbuttons = 1;
 
-			// OK
-			auto& ok = buttonsData[0];
-			ok.text = "OK";
-			ok.result = DialogResult::OK;
-			ok.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
-			ok.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
+		// OK
+		auto& ok = buttonsData[0];
+		ok.text = "OK";
+		ok.result = DialogResult::OK;
+		ok.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
+		ok.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
 
-			break;
-		}
-		case MessageBoxButtons::OKCancel:
-		{
-			data.numbuttons = 2;
+		break;
+	}
+	case MessageBoxButtons::OKCancel:
+	{
+		data.numbuttons = 2;
 
-			// OK
-			auto& ok = buttonsData[0];
-			ok.text = "OK";
-			ok.result = DialogResult::OK;
-			ok.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
+		// OK
+		auto& ok = buttonsData[0];
+		ok.text = "OK";
+		ok.result = DialogResult::OK;
+		ok.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
 
-			// Cancel
-			auto& cancel = buttonsData[1];
-			cancel.text = "Cancel";
-			cancel.result = DialogResult::Cancel;
-			cancel.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
+		// Cancel
+		auto& cancel = buttonsData[1];
+		cancel.text = "Cancel";
+		cancel.result = DialogResult::Cancel;
+		cancel.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
 
-			break;
-		}
-		case MessageBoxButtons::RetryCancel:
-		{
-			data.numbuttons = 2;
+		break;
+	}
+	case MessageBoxButtons::RetryCancel:
+	{
+		data.numbuttons = 2;
 
-			// Retry
-			auto& retry = buttonsData[0];
-			retry.text = "Retry";
-			retry.result = DialogResult::Retry;
-			retry.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
+		// Retry
+		auto& retry = buttonsData[0];
+		retry.text = "Retry";
+		retry.result = DialogResult::Retry;
+		retry.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
 
-			// Cancel
-			auto& cancel = buttonsData[1];
-			cancel.text = "Cancel";
-			cancel.result = DialogResult::Cancel;
-			cancel.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
+		// Cancel
+		auto& cancel = buttonsData[1];
+		cancel.text = "Cancel";
+		cancel.result = DialogResult::Cancel;
+		cancel.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
 
-			break;
-		}
-		case MessageBoxButtons::YesNo:
-		{
-			data.numbuttons = 2;
+		break;
+	}
+	case MessageBoxButtons::YesNo:
+	{
+		data.numbuttons = 2;
 
-			// Yes
-			auto& yes = buttonsData[0];
-			yes.text = "Yes";
-			yes.result = DialogResult::Yes;
-			yes.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
+		// Yes
+		auto& yes = buttonsData[0];
+		yes.text = "Yes";
+		yes.result = DialogResult::Yes;
+		yes.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
 
-			// No
-			auto& no = buttonsData[1];
-			no.text = "No";
-			no.result = DialogResult::No;
-			no.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
+		// No
+		auto& no = buttonsData[1];
+		no.text = "No";
+		no.result = DialogResult::No;
+		no.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
 
-			break;
-		}
-		case MessageBoxButtons::YesNoCancel:
-		{
-			data.numbuttons = 3;
+		break;
+	}
+	case MessageBoxButtons::YesNoCancel:
+	{
+		data.numbuttons = 3;
 
-			// Yes
-			auto& yes = buttonsData[0];
-			yes.text = "Yes";
-			yes.result = DialogResult::Yes;
-			yes.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
+		// Yes
+		auto& yes = buttonsData[0];
+		yes.text = "Yes";
+		yes.result = DialogResult::Yes;
+		yes.flags |= MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT;
 
-			// No
-			auto& no = buttonsData[1];
-			no.text = "No";
-			no.result = DialogResult::No;
-			no.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
+		// No
+		auto& no = buttonsData[1];
+		no.text = "No";
+		no.result = DialogResult::No;
+		no.flags |= MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
 
-			// Cancel
-			auto& cancel = buttonsData[2];
-			cancel.text = "Cancel";
-			cancel.result = DialogResult::Cancel;
+		// Cancel
+		auto& cancel = buttonsData[2];
+		cancel.text = "Cancel";
+		cancel.result = DialogResult::Cancel;
 
-			break;
-		}
-		default:
-			LINUX_DIALOG_PRINT("Invalid message box buttons setup.");
-			return DialogResult::None;
+		break;
+	}
+	default:
+		LINUX_DIALOG_PRINT("Invalid message box buttons setup.");
+		return DialogResult::None;
 	}
 	// TODO: add support for icon
 
@@ -812,6 +808,8 @@ DialogResult MessageBox::Show(Window* parent, const StringView& text, const Stri
 
 int X11ErrorHandler(X11::Display* display, X11::XErrorEvent* event)
 {
+    if (event->error_code == 5)
+        return 0; // BadAtom (invalid Atom parameter)
 	char buffer[256];
 	XGetErrorText(display, event->error_code, buffer, sizeof(buffer));
 	LOG(Error, "X11 Error: {0}", String(buffer));
@@ -945,7 +943,7 @@ const char* ButtonCodeToKeyName(KeyboardKeys code)
 	case KeyboardKeys::NumpadAdd: return "KPAD";
 	case KeyboardKeys::NumpadDecimal: return "KPDL";
 	//case KeyboardKeys::: return "KPEN"; // Numpad Enter
-//case KeyboardKeys::: return "KPEQ"; // Numpad Equals
+	//case KeyboardKeys::: return "KPEQ"; // Numpad Equals
 
 		// Special keys
 	case KeyboardKeys::Scroll: return "SCLK";
@@ -1029,7 +1027,7 @@ int parse_size(const char* str, uintmax_t* res, int* power)
     }
 
     p = str;
-    while (isspace((unsigned char)*p))
+    while (StringUtils::IsWhitespace((char)*p))
         p++;
     if (*p == '-')
     {
@@ -1068,7 +1066,7 @@ check_suffix:
             for (p = fstr; *p == '0'; p++)
                 frac_zeros++;
             fstr = p;
-            if (isdigit(*fstr))
+            if (StringUtils::IsDigit(*fstr))
             {
                 errno = 0, end = NULL;
                 frac = strtoumax(fstr, &end, 0);
@@ -1143,6 +1141,144 @@ err:
     if (rc < 0)
         errno = -rc;
     return rc;
+}
+
+class LinuxKeyboard : public Keyboard
+{
+public:
+	explicit LinuxKeyboard()
+		: Keyboard()
+	{
+	}
+};
+
+class LinuxMouse : public Mouse
+{
+public:
+	explicit LinuxMouse()
+		: Mouse()
+	{
+	}
+
+public:
+
+    // [Mouse]
+    void SetMousePosition(const Vector2& newPosition) final override
+    {
+        LinuxPlatform::SetMousePosition(newPosition);
+
+        OnMouseMoved(newPosition);
+    }
+};
+
+namespace Impl
+{
+	LinuxKeyboard Keyboard;
+	LinuxMouse Mouse;
+    StringAnsi ClipboardText;
+
+    void ClipboardGetText(String& result, X11::Atom source, X11::Atom atom, X11::Window window)
+    {
+        X11::Window selectionOwner = X11::XGetSelectionOwner(xDisplay, source);
+        if (selectionOwner == 0)
+        {
+            // No copy owner
+            return;
+        }
+        if (selectionOwner == window)
+        {
+            // Copy/paste from self
+            result.Set(ClipboardText.Get(), ClipboardText.Length());
+            return;
+        }
+
+        // Send event to get data from the owner
+        int format;
+        unsigned long N, size;
+        char* data;
+        X11::Atom target;
+        X11::Atom CLIPBOARD = X11::XInternAtom(xDisplay, "CLIPBOARD", 0);
+        X11::Atom XSEL_DATA = X11::XInternAtom(xDisplay, "XSEL_DATA", 0);
+        X11::Atom UTF8 = X11::XInternAtom(xDisplay, "UTF8_STRING", 1);
+        X11::XEvent event;
+        X11::XConvertSelection(xDisplay, CLIPBOARD, atom, XSEL_DATA, window, CurrentTime);
+        X11::XSync(xDisplay, 0);
+        X11::XNextEvent(xDisplay, &event);
+        switch(event.type)
+        {
+        case SelectionNotify:
+            if (event.xselection.selection != CLIPBOARD)
+                break;
+            if (event.xselection.property)
+            {
+                X11::XGetWindowProperty(event.xselection.display, event.xselection.requestor, event.xselection.property, 0L,(~0L), 0, AnyPropertyType, &target, &format, &size, &N,(unsigned char**)&data);
+                if (target == UTF8 || target == (X11::Atom)31)
+                {
+                    // Got text to paste
+                    result.Set(data , size);
+                    X11::XFree(data);
+                }
+                X11::XDeleteProperty(event.xselection.display, event.xselection.requestor, event.xselection.property);
+            }
+        }
+    }
+}
+
+void LinuxClipboard::Clear()
+{
+    SetText(StringView::Empty);
+}
+
+void LinuxClipboard::SetText(const StringView& text)
+{
+    auto mainWindow = (LinuxWindow*)Engine::MainWindow;
+    if (!mainWindow)
+        return;
+    X11::Window window = (X11::Window)mainWindow->GetNativePtr();
+
+    Impl::ClipboardText.Set(text.GetText(), text.Length());
+    X11::XSetSelectionOwner(xDisplay, xAtomClipboard, window, CurrentTime); // CLIPBOARD
+    X11::XSetSelectionOwner(xDisplay, (X11::Atom)1, window, CurrentTime); // XA_PRIMARY
+}
+
+void LinuxClipboard::SetRawData(const Span<byte>& data)
+{
+}
+
+void LinuxClipboard::SetFiles(const Array<String>& files)
+{
+}
+
+String LinuxClipboard::GetText()
+{
+    String result;
+    auto mainWindow = (LinuxWindow*)Engine::MainWindow;
+    if (!mainWindow)
+        return result;
+    X11::Window window = (X11::Window)mainWindow->GetNativePtr();
+
+    X11::Atom UTF8 = X11::XInternAtom(xDisplay, "UTF8_STRING", 1);
+    Impl::ClipboardGetText(result, xAtomClipboard, UTF8, window);
+    if (result.HasChars())
+        return result;
+    Impl::ClipboardGetText(result, xAtomClipboard, (X11::Atom)31, window);
+    if (result.HasChars())
+        return result;
+    Impl::ClipboardGetText(result, (X11::Atom)1, UTF8, window);
+    if (result.HasChars())
+        return result;
+    Impl::ClipboardGetText(result, (X11::Atom)1, (X11::Atom)31, window);
+    return result;
+}
+
+Array<byte> LinuxClipboard::GetRawData()
+{
+    return Array<byte>();
+}
+
+Array<String> LinuxClipboard::GetFiles()
+{
+    return Array<String>();
 }
 
 void* LinuxPlatform::GetXDisplay()
@@ -1521,6 +1657,7 @@ bool LinuxPlatform::Init()
 	xAtomWmStateMaxVert = X11::XInternAtom(xDisplay, "_NET_WM_STATE_MAXIMIZED_VERT", 0);
 	xAtomWmWindowOpacity = X11::XInternAtom(xDisplay, "_NET_WM_WINDOW_OPACITY", 0);
 	xAtomWmName = X11::XInternAtom(xDisplay, "_NET_WM_NAME", 0);
+	xAtomClipboard = X11::XInternAtom(xDisplay, "CLIPBOARD", 0);
 
 	SystemDpi = CalculateDpi();
 
@@ -1623,7 +1760,8 @@ bool LinuxPlatform::Init()
 		}
 	}
 
-	LinuxInput::Init();
+    Input::Mouse = &Impl::Mouse;
+    Input::Keyboard = &Impl::Keyboard;
 
     return false;
 }
@@ -1652,7 +1790,6 @@ void LinuxPlatform::Tick()
 		switch (event.type)
 		{
 			case ClientMessage:
-			{
 				// User requested the window to close
 				if ((X11::Atom)event.xclient.data.l[0] == xAtomDeleteWindow)
 				{
@@ -1662,31 +1799,41 @@ void LinuxPlatform::Tick()
 						window->Close(ClosingReason::User);
 					}
 				}
-			}
+			break;
+			case MapNotify:
+				// Auto-focus shown windows
+				window = WindowsManager::GetByNativePtr((void*)event.xmap.window);
+				if (window && window->_focusOnMapped)
+				{
+					window->_focusOnMapped = false;
+					window->Focus();
+				}
 			break;
 			case FocusIn:
-			{
 				// Update input context focus
 				X11::XSetICFocus(IC);
-
 				window = WindowsManager::GetByNativePtr((void*)event.xfocus.window);
 				if (window)
 				{
 					window->OnGotFocus();
 				}
-			}
 			break;
 			case FocusOut:
-			{
 				// Update input context focus
 				X11::XUnsetICFocus(IC);
-
 				window = WindowsManager::GetByNativePtr((void*)event.xfocus.window);
 				if (window)
 				{
 					window->OnLostFocus();
 				}
-			}
+			break;
+			case ConfigureNotify:
+				// Handle window resizing
+				window = WindowsManager::GetByNativePtr((void*)event.xclient.window);
+				if (window)
+				{
+					window->OnConfigureNotify(&event.xconfigure);
+				}
 			break;
 			case PropertyNotify:
 				// Report minimize, maximize and restore events
@@ -1707,7 +1854,6 @@ void LinuxPlatform::Tick()
 						window = WindowsManager::GetByNativePtr((void*)event.xproperty.window);
 						if (window == nullptr)
 							continue;
-
 						X11::Atom* atoms = (X11::Atom*)data;
 
 						bool foundHorz = false;
@@ -1803,6 +1949,37 @@ void LinuxPlatform::Tick()
 				if (window)
 					window->OnLeaveNotify(&event.xcrossing);
 				break;
+            case SelectionRequest:
+            {
+                if (event.xselectionrequest.selection != xAtomClipboard)
+                    break;
+                X11::Atom targets_atom = X11::XInternAtom(xDisplay, "TARGETS", 0);
+                X11::Atom text_atom = X11::XInternAtom(xDisplay, "TEXT", 0);
+                X11::Atom UTF8 = X11::XInternAtom(xDisplay, "UTF8_STRING", 1);
+                if (UTF8 == 0)
+                    UTF8 = (X11::Atom)31;
+                X11::XSelectionRequestEvent* xsr = &event.xselectionrequest;
+                int result = 0;
+                X11::XSelectionEvent ev = { 0 };
+                ev.type = SelectionNotify;
+                ev.display = xsr->display;
+                ev.requestor = xsr->requestor;
+                ev.selection = xsr->selection;
+                ev.time = xsr->time;
+                ev.target = xsr->target;
+                ev.property = xsr->property;
+                if (ev.target == targets_atom)
+                    result = X11::XChangeProperty(ev.display, ev.requestor, ev.property, (X11::Atom)4, 32, PropModeReplace, (unsigned char*)&UTF8, 1);
+                else if (ev.target == (X11::Atom)31 || ev.target == text_atom) 
+                    result = X11::XChangeProperty(ev.display, ev.requestor, ev.property, (X11::Atom)31, 8, PropModeReplace, (unsigned char*)Impl::ClipboardText.Get(), Impl::ClipboardText.Length());
+                else if (ev.target == UTF8)
+                    result = X11::XChangeProperty(ev.display, ev.requestor, ev.property, UTF8, 8, PropModeReplace, (unsigned char*)Impl::ClipboardText.Get(), Impl::ClipboardText.Length());
+                else
+                    ev.property = 0;
+                if ((result & 2) == 0)
+                    X11::XSendEvent(xDisplay, ev.requestor, 0, 0, (X11::XEvent*)&ev);
+                break;
+            }
 			default:
 				break;
 		}
@@ -1880,12 +2057,15 @@ bool LinuxPlatform::GetHasFocus()
 
 bool LinuxPlatform::CanOpenUrl(const StringView& url)
 {
-    return false;
+    return true;
 }
 
 void LinuxPlatform::OpenUrl(const StringView& url)
 {
-    // TODO: add support for OpenUrl on Linux
+    const StringAsANSI<> urlAnsi(*url, url.Length());
+    char cmd[2048];
+    sprintf(cmd, "xdg-open %s", urlAnsi.Get());
+    system(cmd);
 }
 
 Vector2 LinuxPlatform::GetMousePosition()
@@ -2024,10 +2204,91 @@ bool LinuxPlatform::SetEnvironmentVariable(const String& name, const String& val
     return setenv(StringAsANSI<>(*name).Get(), StringAsANSI<>(*value).Get(), true) != 0;
 }
 
+int32 LinuxPlatform::StartProcess(const StringView& filename, const StringView& args, const StringView& workingDir, bool hiddenWindow, bool waitForEnd)
+{
+	String command(filename);
+	if (args.HasChars())
+		command += TEXT(" ") + String(args);
+    LOG(Info, "Command: {0}", command);
+    if (workingDir.HasChars())
+    {
+        LOG(Info, "Working directory: {0}", workingDir);
+    }
+
+	// TODO: support workingDir
+	// TODO: support hiddenWindow
+	// TODO: support waitForEnd
+
+	StringAnsi commandAnsi(command);
+	system(commandAnsi.GetText());
+    return 0;
+}
+
+int32 LinuxPlatform::RunProcess(const StringView& cmdLine, const StringView& workingDir, bool hiddenWindow)
+{
+    return RunProcess(cmdLine, workingDir, Dictionary<String, String>(), hiddenWindow);
+}
+
+int32 LinuxPlatform::RunProcess(const StringView& cmdLine, const StringView& workingDir, const Dictionary<String, String>& environment, bool hiddenWindow)
+{
+    LOG(Info, "Command: {0}", cmdLine);
+    if (workingDir.HasChars())
+    {
+        LOG(Info, "Working directory: {0}", workingDir);
+    }
+
+	// TODO: support environment
+	// TODO: support hiddenWindow
+
+	String dir = GetWorkingDirectory();
+	StringAnsi cmdLineAnsi;
+	if (workingDir.HasChars())
+	{
+		cmdLineAnsi += "chmod ";
+		cmdLineAnsi += StringAnsi(workingDir);
+		cmdLineAnsi += "; ";
+	}
+	cmdLineAnsi += StringAnsi(cmdLine);
+
+    FILE* pipe = popen(cmdLineAnsi.GetText(), "r");
+    if (!pipe)
+	{
+        LOG(Warning, "Cannot start process '{0}'", cmdLine);
+        return 1;
+	}
+
+	char rawData[256];
+	StringAnsi pathAnsi;
+	Array<Char> logData;
+	while (fgets(rawData, sizeof(rawData), pipe) != NULL)
+	{
+		logData.Clear();
+		int32 rawDataLength = StringUtils::Length(rawData);
+		if (rawDataLength == 0)
+			continue;
+		if (rawData[rawDataLength - 1] == '\0')
+			rawDataLength--;
+		if (rawData[rawDataLength - 1] == '\n')
+			rawDataLength--;
+		logData.Resize(rawDataLength + 1);
+		StringUtils::ConvertANSI2UTF16(rawData, logData.Get(), rawDataLength);
+		logData.Last() = '\0';
+		Log::Logger::Write(LogType::Info, StringView(logData.Get(), rawDataLength));
+	}
+
+	int32 result = pclose(pipe);
+    return result;
+}
+
 void* LinuxPlatform::LoadLibrary(const Char* filename)
 {
     const StringAsANSI<> filenameANSI(filename);
-	return dlopen(filenameANSI.Get(), RTLD_LAZY);
+    void* result = dlopen(filenameANSI.Get(), RTLD_LAZY | RTLD_LOCAL);
+    if (!result)
+    {
+        LOG(Error, "Failed to load {0} because {1}", filename, String(dlerror()));
+    }
+    return result;
 }
 
 void LinuxPlatform::FreeLibrary(void* handle)

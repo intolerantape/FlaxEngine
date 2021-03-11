@@ -66,6 +66,7 @@ namespace FlaxEditor.Windows
         : base(editor, true, ScrollBars.None)
         {
             Title = "Content";
+            Icon = editor.Icons.Folder64;
 
             // Content database events
             editor.ContentDatabase.WorkspaceModified += () => _isWorkspaceDirty = true;
@@ -370,7 +371,7 @@ namespace FlaxEditor.Windows
 
                 // Focus content window
                 Focus();
-                RootWindow?.Window.Focus();
+                RootWindow?.Focus();
             }
 
             // Refresh database and view now

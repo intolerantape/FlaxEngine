@@ -38,6 +38,11 @@ namespace Flax.Build
         public bool BuildNativeCode = true;
 
         /// <summary>
+        /// True if module has C# code to build. Can be used for native modules without C# bindings nor code.
+        /// </summary>
+        public bool BuildCSharp = true;
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="Module"/> class.
         /// </summary>
         public Module()
@@ -110,6 +115,17 @@ namespace Flax.Build
         {
             // By default deploy all C++ header files
             files.AddRange(Directory.GetFiles(FolderPath, "*.h", SearchOption.AllDirectories));
+        }
+
+        /// <summary>
+        /// Adds the file to the build sources if exists.
+        /// </summary>
+        /// <param name="options">The options.</param>
+        /// <param name="path">The source file path.</param>
+        protected void AddSourceFileIfExists(BuildOptions options, string path)
+        {
+            if (File.Exists(path))
+                options.SourceFiles.Add(path);
         }
     }
 }

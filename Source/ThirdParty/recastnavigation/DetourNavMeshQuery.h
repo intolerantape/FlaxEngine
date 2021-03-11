@@ -34,6 +34,7 @@
 /// @ingroup detour
 class dtQueryFilter
 {
+public:
 	float m_areaCost[DT_MAX_AREAS];		///< Cost per area type. (Used by default implementation.)
 	unsigned short m_includeFlags;		///< Flags for polygons that can be visited. (Used by default implementation.)
 	unsigned short m_excludeFlags;		///< Flags for polygons that should not be visted. (Used by default implementation.)
@@ -118,8 +119,6 @@ public:
 	///@}
 
 };
-
-
 
 /// Provides information about raycast hit
 /// filled by dtNavMeshQuery::raycast
@@ -315,15 +314,31 @@ public:
 	///@{
 
 	/// Finds the polygon nearest to the specified center point.
+	/// [opt] means the specified parameter can be a null pointer, in that case the output parameter will not be set.
+	///
 	///  @param[in]		center		The center of the search box. [(x, y, z)]
-	///  @param[in]		halfExtents		The search distance along each axis. [(x, y, z)]
+	///  @param[in]		halfExtents	The search distance along each axis. [(x, y, z)]
 	///  @param[in]		filter		The polygon filter to apply to the query.
-	///  @param[out]	nearestRef	The reference id of the nearest polygon.
-	///  @param[out]	nearestPt	The nearest point on the polygon. [opt] [(x, y, z)]
+	///  @param[out]	nearestRef	The reference id of the nearest polygon. Will be set to 0 if no polygon is found.
+	///  @param[out]	nearestPt	The nearest point on the polygon. Unchanged if no polygon is found. [opt] [(x, y, z)]
 	/// @returns The status flags for the query.
 	dtStatus findNearestPoly(const float* center, const float* halfExtents,
 							 const dtQueryFilter* filter,
 							 dtPolyRef* nearestRef, float* nearestPt) const;
+
+	/// Finds the polygon nearest to the specified center point.
+	/// [opt] means the specified parameter can be a null pointer, in that case the output parameter will not be set.
+	/// 
+	///  @param[in]		center		The center of the search box. [(x, y, z)]
+	///  @param[in]		halfExtents	The search distance along each axis. [(x, y, z)]
+	///  @param[in]		filter		The polygon filter to apply to the query.
+	///  @param[out]	nearestRef	The reference id of the nearest polygon. Will be set to 0 if no polygon is found.
+	///  @param[out]	nearestPt	The nearest point on the polygon. Unchanged if no polygon is found. [opt] [(x, y, z)]
+	///  @param[out]	isOverPoly 	Set to true if the point's X/Z coordinate lies inside the polygon, false otherwise. Unchanged if no polygon is found. [opt]
+	/// @returns The status flags for the query.
+	dtStatus findNearestPoly(const float* center, const float* halfExtents,
+							 const dtQueryFilter* filter,
+							 dtPolyRef* nearestRef, float* nearestPt, bool* isOverPoly) const;
 	
 	/// Finds polygons that overlap the search box.
 	///  @param[in]		center		The center of the search box. [(x, y, z)]

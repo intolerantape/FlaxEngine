@@ -22,6 +22,7 @@ public class FlaxEditor : EngineTarget
         Platforms = new[]
         {
             TargetPlatform.Windows,
+            TargetPlatform.Linux,
         };
         Architectures = new[]
         {
@@ -43,6 +44,7 @@ public class FlaxEditor : EngineTarget
     {
         base.SetupTargetEnvironment(options);
 
+        // Setup output folder for Editor binaries
         switch (options.Platform.Target)
         {
         case TargetPlatform.Windows:
@@ -56,6 +58,10 @@ public class FlaxEditor : EngineTarget
                 break;
             default: throw new InvalidArchitectureException(options.Architecture, "Not supported Editor architecture.");
             }
+            break;
+        case TargetPlatform.Linux:
+            options.OutputFolder = Path.Combine(options.WorkingDirectory, "Binaries", "Editor", "Linux", options.Configuration.ToString());
+            options.DependencyFiles.Add(Path.Combine(Globals.EngineRoot, "Source", "Logo.png"));
             break;
         default: throw new InvalidPlatformException(options.Platform.Target, "Not supported Editor platform.");
         }

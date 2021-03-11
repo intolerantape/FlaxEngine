@@ -3,6 +3,7 @@
 #include "ScriptsBuilder.h"
 #include "CodeEditor.h"
 #include "Editor/Editor.h"
+#include "Editor/ProjectInfo.h"
 #include "Editor/Managed/ManagedEditor.h"
 #include "Engine/Core/Types/String.h"
 #include "Engine/Core/Types/StringBuilder.h"
@@ -113,9 +114,9 @@ Action ScriptsBuilder::OnCompilationFailed;
 void ScriptsBuilderImpl::sourceDirEvent(const String& path, FileSystemAction action)
 {
     // Discard non-source files or generated files
-    if (!path.EndsWith(TEXT(".cs")) &&
+    if ((!path.EndsWith(TEXT(".cs")) &&
         !path.EndsWith(TEXT(".cpp")) &&
-        !path.EndsWith(TEXT(".h")) ||
+        !path.EndsWith(TEXT(".h"))) ||
         path.EndsWith(TEXT(".Gen.cs")))
         return;
 
@@ -217,39 +218,29 @@ bool ScriptsBuilder::RunBuildTool(const StringView& args)
         return true;
     }
 
-#if PLATFORM_WINDOWS
     // Prepare build options
-    StringBuilder cmdLine(args.Length() + buildToolPath.Length() + 30);
-    cmdLine.Append(TEXT("\""));
-    cmdLine.Append(buildToolPath);
-    cmdLine.Append(TEXT("\" "));
-    cmdLine.Append(args.Get(), args.Length());
-    cmdLine.Append(TEXT('\0'));
-#else
-    // Use mono to run the build tool
-    const String monoPath = Globals::MonoPath / TEXT("bin/mono.exe");
+    StringBuilder cmdLine(args.Length() + buildToolPath.Length() + 200);
+#if PLATFORM_LINUX
+    const String monoPath = Globals::MonoPath / TEXT("bin/mono");
     if (!FileSystem::FileExists(monoPath))
     {
         Log::FileNotFoundException(monoPath).SetLevel(LogType::Fatal);
         return true;
     }
-
-    // Prepare build options
-    StringBuilder cmdLine(monoPath.Length() + args.Length() + buildToolPath.Length() + 30);
+    //const String monoPath = TEXT("mono");
     cmdLine.Append(TEXT("\""));
     cmdLine.Append(monoPath);
-    cmdLine.Append(TEXT("\" \""));
+    cmdLine.Append(TEXT("\" "));
+#endif
+    cmdLine.Append(TEXT("\""));
     cmdLine.Append(buildToolPath);
     cmdLine.Append(TEXT("\" "));
     cmdLine.Append(args.Get(), args.Length());
     cmdLine.Append(TEXT('\0'));
-
-    // TODO: Set env var for the mono MONO_GC_PARAMS=nursery-size64m to boost build performance
-#endif
+    // TODO: Set env var for the mono MONO_GC_PARAMS=nursery-size64m to boost build performance -> profile it
 
     // Call build tool
     const int32 result = Platform::RunProcess(StringView(*cmdLine, cmdLine.Length()), StringView::Empty);
-
     return result != 0;
 }
 
@@ -354,12 +345,18 @@ void ScriptsBuilder::GetBinariesConfiguration(const Char*& target, const Char*& 
 
 #if PLATFORM_WINDOWS
     platform = TEXT("Windows");
+#elif PLATFORM_LINUX
+    platform = TEXT("Linux");
+#else
+#error "Unknown platform"
 #endif
 
 #if PLATFORM_ARCH_X64
     architecture = TEXT("x64");
 #elif PLATFORM_ARCH_X86
     architecture = TEXT("x86");
+#else
+#error "Unknown architecture"
 #endif
 
 #if BUILD_DEBUG
@@ -368,6 +365,8 @@ void ScriptsBuilder::GetBinariesConfiguration(const Char*& target, const Char*& 
     configuration = TEXT("Development");
 #elif BUILD_RELEASE
     configuration = TEXT("Release");
+#else
+#error "Unknown configuration"
 #endif
 }
 
@@ -525,7 +524,7 @@ bool ScriptsBuilderService::Init()
     _isInited = true;
 
     // Link for Editor assembly unload event to clear cached Internal_OnCompilationEnd to prevent errors
-    auto editorAssembly = GetBinaryModuleFlaxEngine()->Assembly;
+    auto editorAssembly = ((NativeBinaryModule*)GetBinaryModuleFlaxEngine())->Assembly;
     editorAssembly->Unloading.Bind(onEditorAssemblyUnloading);
 
     // Listen to scripts reloading events and forward them to c#

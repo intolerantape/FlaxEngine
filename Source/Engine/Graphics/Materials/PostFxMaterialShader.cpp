@@ -2,7 +2,6 @@
 
 #include "PostFxMaterialShader.h"
 #include "MaterialParams.h"
-#include "Engine/Engine/Time.h"
 #include "Engine/Graphics/GPUDevice.h"
 #include "Engine/Graphics/RenderTask.h"
 #include "Engine/Graphics/Shaders/GPUShader.h"
@@ -26,40 +25,38 @@ void PostFxMaterialShader::Bind(BindParameters& params)
     // Prepare
     auto context = params.GPUContext;
     auto& view = params.RenderContext.View;
-    auto& drawCall = *params.FirstDrawCall;
-    const auto cb0 = _shader->GetCB(0);
-    const bool hasCb0 = cb0->GetSize() != 0;
+    byte* cb = _cbData.Get();
+    auto materialData = reinterpret_cast<PostFxMaterialShaderData*>(cb);
+    cb += sizeof(PostFxMaterialShaderData);
+    int32 srv = 0;
 
     // Setup parameters
     MaterialParameter::BindMeta bindMeta;
     bindMeta.Context = context;
-    bindMeta.Buffer0 = hasCb0 ? _cb0Data.Get() + sizeof(PostFxMaterialShaderData) : nullptr;
+    bindMeta.Constants = cb;
     bindMeta.Input = params.Input;
     bindMeta.Buffers = params.RenderContext.Buffers;
     bindMeta.CanSampleDepth = true;
     bindMeta.CanSampleGBuffer = true;
     MaterialParams::Bind(params.ParamsLink, bindMeta);
 
-    // Setup material constants data
-    if (hasCb0)
+    // Setup material constants
     {
-        const auto materialData = reinterpret_cast<PostFxMaterialShaderData*>(_cb0Data.Get());
-
         Matrix::Transpose(view.View, materialData->ViewMatrix);
         materialData->ViewPos = view.Position;
         materialData->ViewFar = view.Far;
         materialData->ViewDir = view.Direction;
-        materialData->TimeParam = Time::Draw.UnscaledTime.GetTotalSeconds();
+        materialData->TimeParam = params.TimeParam;
         materialData->ViewInfo = view.ViewInfo;
         materialData->ScreenSize = view.ScreenSize;
         materialData->TemporalAAJitter = view.TemporalAAJitter;
     }
 
     // Bind constants
-    if (hasCb0)
+    if (_cb)
     {
-        context->UpdateCB(cb0, _cb0Data.Get());
-        context->BindCB(0, cb0);
+        context->UpdateCB(_cb, _cbData.Get());
+        context->BindCB(0, _cb);
     }
 
     // Bind pipeline

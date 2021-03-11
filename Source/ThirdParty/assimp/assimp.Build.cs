@@ -16,6 +16,9 @@ public class assimp : DepsModule
 
         LicenseType = LicenseTypes.Custom;
         LicenseFilePath = "LICENSE";
+
+        // Merge third-party modules into engine binary
+        BinaryModuleName = "FlaxEngine";
     }
 
     /// <inheritdoc />
@@ -30,6 +33,12 @@ public class assimp : DepsModule
             options.OutputFiles.Add(Path.Combine(depsRoot, "assimp-vc140-md.lib"));
             options.DependencyFiles.Add(Path.Combine(depsRoot, "assimp-vc140-md.dll"));
             options.DelayLoadLibraries.Add("assimp-vc140-md.dll");
+            break;
+        case TargetPlatform.Linux:
+            options.DependencyFiles.Add(Path.Combine(depsRoot, "libassimp.so"));
+            options.DependencyFiles.Add(Path.Combine(depsRoot, "libassimp.so.4"));
+            options.DependencyFiles.Add(Path.Combine(depsRoot, "libassimp.so.4.1.0"));
+            options.Libraries.Add(Path.Combine(depsRoot, "libassimp.so"));
             break;
         default: throw new InvalidPlatformException(options.Platform.Target);
         }

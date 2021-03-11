@@ -245,7 +245,7 @@ bool ParticleEmitterGraphCPUExecutor::ComputeBounds(ParticleEmitter* emitter, Pa
                 _emitter = emitter;
                 _effect = effect;
                 _deltaTime = 0.0f;
-                _viewTask = PARTICLE_EMITTER_GET_VIEW_TASK(effect);
+                _viewTask = effect->GetRenderTask();
                 _callStack.Clear();
 
                 // Find the maximum radius of the particle light
@@ -312,6 +312,30 @@ bool ParticleEmitterGraphCPUExecutor::ComputeBounds(ParticleEmitter* emitter, Pa
                 }
                 break;
             }
+                // Volumetric Fog Rendering
+            case 405:
+            {
+                // Find the maximum radius of the particle
+                float maxRadius = 0.0f;
+                if (_graph._attrRadius != -1)
+                {
+                    byte* radius = bufferPtr + layout->Attributes[_graph._attrRadius].Offset;
+                    for (int32 i = 0; i < count; i++)
+                    {
+                        maxRadius = Math::Max(*((float*)radius), maxRadius);
+                        radius += stride;
+                    }
+                    ASSERT(!isnan(maxRadius) && !isinf(maxRadius));
+                }
+                else
+                {
+                    maxRadius = 100.0f;
+                }
+
+                // Enlarge the emitter bounds sphere
+                sphere.Radius += maxRadius;
+            }
+            break;
             }
         }
 
@@ -351,7 +375,7 @@ void ParticleEmitterGraphCPUExecutor::Draw(ParticleEmitter* emitter, ParticleEff
     _emitter = emitter;
     _effect = effect;
     _deltaTime = 0.0f;
-    _viewTask = PARTICLE_EMITTER_GET_VIEW_TASK(effect);
+    _viewTask = effect->GetRenderTask();
     _callStack.Clear();
 
     // Draw lights
@@ -411,7 +435,7 @@ void ParticleEmitterGraphCPUExecutor::Update(ParticleEmitter* emitter, ParticleE
     _effect = effect;
     _particleIndex = 0;
     _deltaTime = dt;
-    _viewTask = PARTICLE_EMITTER_GET_VIEW_TASK(effect);
+    _viewTask = effect->GetRenderTask();
     _callStack.Clear();
     auto& cpu = data.Buffer->CPU;
 
@@ -557,7 +581,7 @@ int32 ParticleEmitterGraphCPUExecutor::UpdateSpawn(ParticleEmitter* emitter, Par
     _effect = effect;
     _particleIndex = 0;
     _deltaTime = dt;
-    _viewTask = PARTICLE_EMITTER_GET_VIEW_TASK(effect);
+    _viewTask = effect->GetRenderTask();
     _callStack.Clear();
 
     // Spawn particles

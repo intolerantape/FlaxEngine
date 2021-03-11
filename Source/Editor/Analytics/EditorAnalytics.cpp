@@ -8,6 +8,7 @@
 #include "Engine/Core/Math/Vector2.h"
 #include "Engine/Core/Types/DateTime.h"
 #include "Editor/Editor.h"
+#include "Editor/ProjectInfo.h"
 #include "Engine/Engine/EngineService.h"
 #include "Engine/Graphics/GPUDevice.h"
 #include "Engine/Utilities/StringConverter.h"
@@ -103,6 +104,8 @@ void EditorAnalytics::StartSession()
             { UA_DOCUMENT_TITLE, 0, "Flax Editor" },
 #if PLATFORM_WINDOWS
             { UA_USER_AGENT, 0, "Windows " FLAXENGINE_VERSION_TEXT },
+#elif PLATFORM_LINUX
+            { UA_USER_AGENT, 0, "Linux " FLAXENGINE_VERSION_TEXT },
 #else
 #error "Unknown platform"
 #endif

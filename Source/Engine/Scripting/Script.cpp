@@ -77,13 +77,11 @@ void Script::SetParent(Actor* value, bool canBreakPrefabLink)
     // Check if value won't change
     if (_parent == value)
         return;
-    if (!IsInMainThread())
+    if (IsDuringPlay() && !IsInMainThread())
     {
         LOG(Error, "Editing scene hierarchy is only allowed on a main thread.");
         return;
     }
-
-    Level::ScenesLock.Lock();
 
     // Unlink from the old one
     if (_parent)
@@ -106,8 +104,6 @@ void Script::SetParent(Actor* value, bool canBreakPrefabLink)
     {
         _parent->Scripts.Add(this);
     }
-
-    Level::ScenesLock.Unlock();
 
     // Break prefab link for prefab instance objects
     if (HasPrefabLink() && IsDuringPlay() && canBreakPrefabLink)
@@ -137,7 +133,7 @@ void Script::SetParent(Actor* value, bool canBreakPrefabLink)
             Enable();
         }
     }
-    else if (!previous && value->IsDuringPlay() && value->IsActiveInHierarchy() && GetEnabled())
+    else if (!previous && value && value->IsDuringPlay() && value->IsActiveInHierarchy() && GetEnabled())
     {
         // Call enable when script is added to actor (previous actor was null)
         Enable();
@@ -186,9 +182,9 @@ void Script::SetupType()
     while (typeHandle != Script::TypeInitializer)
     {
         auto& type = typeHandle.GetType();
-        _tickUpdate |= type.Class.ScriptVTable[8] != nullptr;
-        _tickLateUpdate |= type.Class.ScriptVTable[9] != nullptr;
-        _tickFixedUpdate |= type.Class.ScriptVTable[10] != nullptr;
+        _tickUpdate |= type.Script.ScriptVTable[8] != nullptr;
+        _tickLateUpdate |= type.Script.ScriptVTable[9] != nullptr;
+        _tickFixedUpdate |= type.Script.ScriptVTable[10] != nullptr;
         typeHandle = type.GetBaseType();
     }
 }

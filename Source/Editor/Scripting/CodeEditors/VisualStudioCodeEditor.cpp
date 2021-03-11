@@ -4,6 +4,7 @@
 #include "Engine/Platform/FileSystem.h"
 #include "Engine/Core/Log.h"
 #include "Editor/Editor.h"
+#include "Editor/ProjectInfo.h"
 #include "Editor/Scripting/ScriptsBuilder.h"
 #include "Engine/Engine/Globals.h"
 #include "Engine/Platform/Win32/IncludeWindowsHeaders.h"
@@ -42,6 +43,30 @@ void VisualStudioCodeEditor::FindEditors(Array<CodeEditor*>* output)
     {
         output->Add(New<VisualStudioCodeEditor>(path, isInsiders));
     }
+#elif PLATFORM_LINUX
+    char buffer[128];
+    FILE* pipe = popen("/bin/bash -c \"type -p code\"", "r");
+    if (pipe)
+    {
+        StringAnsi pathAnsi;
+        while (fgets(buffer, sizeof(buffer), pipe) != NULL)
+            pathAnsi += buffer;
+        pclose(pipe);
+        const String path(pathAnsi.Get(), pathAnsi.Length() != 0 ? pathAnsi.Length() - 1 : 0);
+        if (FileSystem::FileExists(path))
+        {
+            output->Add(New<VisualStudioCodeEditor>(path, false));
+            return;
+        }
+    }
+    {
+        const String path(TEXT("/usr/bin/code"));
+        if (FileSystem::FileExists(path))
+        {
+            output->Add(New<VisualStudioCodeEditor>(path, false));
+            return;
+        }
+    }
 #endif
 }
 
@@ -57,8 +82,15 @@ String VisualStudioCodeEditor::GetName() const
 
 void VisualStudioCodeEditor::OpenFile(const String& path, int32 line)
 {
+    // Generate VS solution files for intellisense
+    if (!FileSystem::FileExists(Globals::ProjectFolder / Editor::Project->Name + TEXT(".sln")))
+    {
+        ScriptsBuilder::GenerateProject(TEXT("-vs2019"));
+    }
+
     // Generate project files if missing
-    if (!FileSystem::FileExists(Globals::ProjectFolder / TEXT(".vscode/tasks.json")))
+    if (!FileSystem::FileExists(Globals::ProjectFolder / TEXT(".vscode/tasks.json")) ||
+        !FileSystem::FileExists(_workspacePath))
     {
         ScriptsBuilder::GenerateProject(TEXT("-vscode"));
     }
@@ -71,8 +103,15 @@ void VisualStudioCodeEditor::OpenFile(const String& path, int32 line)
 
 void VisualStudioCodeEditor::OpenSolution()
 {
+    // Generate VS solution files for intellisense
+    if (!FileSystem::FileExists(Globals::ProjectFolder / Editor::Project->Name + TEXT(".sln")))
+    {
+        ScriptsBuilder::GenerateProject(TEXT("-vs2019"));
+    }
+
     // Generate project files if solution is missing
-    if (!FileSystem::FileExists(Globals::ProjectFolder / TEXT(".vscode/tasks.json")))
+    if (!FileSystem::FileExists(Globals::ProjectFolder / TEXT(".vscode/tasks.json")) ||
+        !FileSystem::FileExists(_workspacePath))
     {
         ScriptsBuilder::GenerateProject(TEXT("-vscode"));
     }
